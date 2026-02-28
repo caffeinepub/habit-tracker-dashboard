@@ -12,10 +12,10 @@ import Runtime "mo:core/Runtime";
 
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
-
+import Migration "migration";
 
 // Migration
-
+(with migration = Migration.run)
 actor {
   let HARDCODED_ADMIN : Principal = Principal.fromText("h3k33-vzkys-gtpvb-j7eqr-rvkzy-mzzsd-ll3yr-u36x5-hfopd-jkaib-hae");
 
@@ -413,7 +413,7 @@ actor {
   };
 
   public query ({ caller }) func getAdminStats() : async [UserActivity] {
-    if (caller != HARDCODED_ADMIN and not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+    if (not (caller == HARDCODED_ADMIN or AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can access stats");
     };
 
@@ -440,30 +440,64 @@ actor {
     AccessControl.isAdmin(accessControlState, caller);
   };
 
+  // Bugfix 1: Fixed getAdminUserDetails implementation (only left bugfix in code, deleted old code).
   public query ({ caller }) func getAdminUserDetails(todayDate : Text) : async [UserAdminDetail] {
-    if (caller != HARDCODED_ADMIN and not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+    if (not (caller == HARDCODED_ADMIN or AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can access user details");
     };
 
+    // Step 1: Collect all principals from all maps
+    let allPrincipals = Set.empty<Principal>();
+
+    // Add principals from userActivity
+    for ((principal, _) in userActivity.entries()) {
+      allPrincipals.add(principal);
+    };
+
+    // Add principals from userProfiles
+    for ((principal, _) in userProfiles.entries()) {
+      allPrincipals.add(principal);
+    };
+
+    // Add principals from userHabits
+    for ((principal, _) in userHabits.entries()) {
+      allPrincipals.add(principal);
+    };
+
+    // Step 2: Build details for each principal
     let details = List.empty<UserAdminDetail>();
 
-    for ((user, activity) in userActivity.entries()) {
-      let displayName = switch (userProfiles.get(user)) {
+    for (p in allPrincipals.values()) {
+      let principal = p;
+
+      // Fetch optional activity data
+      let activityOpt = userActivity.get(principal);
+
+      // Determine names and activity data
+      let displayName = switch (userProfiles.get(p)) {
         case (?profile) { profile.name };
         case (null) { "" };
       };
 
-      let mobile = switch (userProfiles.get(user)) {
+      let mobile = switch (userProfiles.get(principal)) {
         case (?profile) { profile.mobile };
         case (null) { "" };
       };
 
-      let habits = switch (userHabits.get(user)) {
-        case (?habits) { habits.toArray() };
-        case (null) { [] };
+      let (firstLogin, lastLogin) = switch (activityOpt) {
+        case (?activity) { (activity.firstLogin, activity.lastLogin) };
+        case (null) { (0, 0) };
       };
 
-      let completionsToday = switch (userCompletions.get(user)) {
+      // Fetch habits and count
+      let habits = switch (userHabits.get(principal)) {
+        case (?h) { h.toArray() };
+        case (null) { [] };
+      };
+      let habitCount = habits.size();
+
+      // Count completions today
+      let completionsToday = switch (userCompletions.get(principal)) {
         case (?completions) {
           var count = 0;
           for ((_, dates) in completions.entries()) {
@@ -474,9 +508,8 @@ actor {
         case (null) { 0 };
       };
 
-      let habitCount = habits.size();
-
-      let totalCompletions = switch (userCompletions.get(user)) {
+      // Calculate weekly completion rate
+      let totalCompletions = switch (userCompletions.get(principal)) {
         case (?completions) {
           var total = 0;
           for ((_, dates) in completions.entries()) {
@@ -494,16 +527,17 @@ actor {
 
       let weeklyCompletionRate = if (habitCount > 0) {
         let maxCompletions = habitCount * 7; // 7 days
-        let rate = Nat8.fromNat((totalCompletions * 100) / maxCompletions);
-        if (rate > 100) { 100 } else { rate.toNat() };
+        let rate = (totalCompletions * 100) / maxCompletions;
+        if (rate > 100) { 100 } else { rate };
       } else { 0 };
 
+      // Build detail record
       let detail : UserAdminDetail = {
-        principal = activity.principal;
+        principal = principal.toText();
         displayName;
         mobile;
-        firstLogin = activity.firstLogin;
-        lastLogin = activity.lastLogin;
+        firstLogin;
+        lastLogin;
         habits;
         completionsToday;
         weeklyCompletionRate;

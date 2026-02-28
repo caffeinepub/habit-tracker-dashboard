@@ -199,9 +199,10 @@ export function useGetAdminStats() {
   });
 }
 
-export function useGetAdminUserDetails() {
+export function useGetAdminUserDetails(isAdminOverride?: boolean) {
   const { actor, isFetching } = useActor();
-  const { data: isAdmin } = useIsAdmin();
+  const { data: isAdminFromQuery } = useIsAdmin();
+  const isAdmin = isAdminOverride === true || !!isAdminFromQuery;
   const today = format(new Date(), "yyyy-MM-dd");
   return useQuery<UserAdminDetail[]>({
     queryKey: ["adminUserDetails", today],
@@ -213,9 +214,9 @@ export function useGetAdminUserDetails() {
         return [];
       }
     },
-    enabled: !!actor && !isFetching && !!isAdmin,
+    enabled: !!actor && !isFetching && isAdmin,
     staleTime: 0,
-    refetchInterval: 20_000, // refresh admin user details every 20 seconds
+    refetchInterval: 20_000,
     refetchIntervalInBackground: false,
   });
 }

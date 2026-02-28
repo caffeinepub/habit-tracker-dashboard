@@ -285,7 +285,7 @@ export function AdminDashboard({
     isLoading: usersLoading,
     refetch,
     isFetching,
-  } = useGetAdminUserDetails();
+  } = useGetAdminUserDetails(isAdmin === true);
 
   if (adminLoading && isAdminProp === undefined) {
     return (
