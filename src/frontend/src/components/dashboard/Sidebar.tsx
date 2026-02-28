@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Settings,
   Shield,
   User,
   X,
@@ -27,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard", id: "dashboard" },
   { icon: <ListChecks size={18} />, label: "Habits", id: "habits" },
   { icon: <BarChart3 size={18} />, label: "Analytics", id: "analytics" },
+  { icon: <Settings size={18} />, label: "Settings", id: "settings" },
 ];
 
 const ADMIN_PRINCIPAL =

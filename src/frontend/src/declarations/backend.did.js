@@ -25,6 +25,7 @@ export const Habit = IDL.Record({
   'name' : IDL.Text,
   'color' : IDL.Text,
   'emoji' : IDL.Text,
+  'reminderTime' : IDL.Text,
 });
 export const UserAdminDetail = IDL.Record({
   'principal' : IDL.Text,
@@ -32,10 +33,14 @@ export const UserAdminDetail = IDL.Record({
   'completionsToday' : IDL.Nat,
   'habits' : IDL.Vec(Habit),
   'firstLogin' : IDL.Int,
+  'mobile' : IDL.Text,
   'lastLogin' : IDL.Int,
   'weeklyCompletionRate' : IDL.Nat,
 });
-export const UserProfile = IDL.Record({ 'name' : IDL.Text });
+export const UserProfile = IDL.Record({
+  'name' : IDL.Text,
+  'mobile' : IDL.Text,
+});
 export const StreakData = IDL.Record({
   'bestStreak' : IDL.Nat,
   'currentStreak' : IDL.Nat,
@@ -76,6 +81,7 @@ export const idlService = IDL.Service({
   'recordLogin' : IDL.Func([], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'setAdminPrincipal' : IDL.Func([IDL.Principal], [], []),
+  'setHabitReminderTime' : IDL.Func([HabitId, IDL.Text], [], []),
   'toggleCompletion' : IDL.Func([HabitId, IDL.Text], [], []),
 });
 
@@ -99,6 +105,7 @@ export const idlFactory = ({ IDL }) => {
     'name' : IDL.Text,
     'color' : IDL.Text,
     'emoji' : IDL.Text,
+    'reminderTime' : IDL.Text,
   });
   const UserAdminDetail = IDL.Record({
     'principal' : IDL.Text,
@@ -106,10 +113,11 @@ export const idlFactory = ({ IDL }) => {
     'completionsToday' : IDL.Nat,
     'habits' : IDL.Vec(Habit),
     'firstLogin' : IDL.Int,
+    'mobile' : IDL.Text,
     'lastLogin' : IDL.Int,
     'weeklyCompletionRate' : IDL.Nat,
   });
-  const UserProfile = IDL.Record({ 'name' : IDL.Text });
+  const UserProfile = IDL.Record({ 'name' : IDL.Text, 'mobile' : IDL.Text });
   const StreakData = IDL.Record({
     'bestStreak' : IDL.Nat,
     'currentStreak' : IDL.Nat,
@@ -150,6 +158,7 @@ export const idlFactory = ({ IDL }) => {
     'recordLogin' : IDL.Func([], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'setAdminPrincipal' : IDL.Func([IDL.Principal], [], []),
+    'setHabitReminderTime' : IDL.Func([HabitId, IDL.Text], [], []),
     'toggleCompletion' : IDL.Func([HabitId, IDL.Text], [], []),
   });
 };

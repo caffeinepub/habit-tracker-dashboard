@@ -8,12 +8,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Smile } from "lucide-react";
+import { Loader2, Phone, Smile } from "lucide-react";
 import { useState } from "react";
 
 interface ProfileSetupModalProps {
   open: boolean;
-  onSave: (name: string) => void;
+  onSave: (name: string, mobile: string) => void;
   isSaving: boolean;
 }
 
@@ -23,12 +23,13 @@ export function ProfileSetupModal({
   isSaving,
 }: ProfileSetupModalProps) {
   const [name, setName] = useState("");
+  const [mobile, setMobile] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    onSave(trimmed);
+    onSave(trimmed, mobile.trim());
   };
 
   return (
@@ -49,7 +50,7 @@ export function ProfileSetupModal({
             Welcome to HabitFlow!
           </DialogTitle>
           <DialogDescription className="text-center text-muted-foreground">
-            Let's set up your profile. What should we call you?
+            Let's set up your profile to get started.
           </DialogDescription>
         </DialogHeader>
 
@@ -67,9 +68,32 @@ export function ProfileSetupModal({
               className="bg-muted/30 border-border/50 focus:border-primary/60"
             />
           </div>
+
+          <div className="space-y-2">
+            <Label
+              htmlFor="profile-mobile"
+              className="flex items-center gap-1.5"
+            >
+              <Phone size={13} className="text-muted-foreground" />
+              Mobile Number
+            </Label>
+            <Input
+              id="profile-mobile"
+              type="tel"
+              placeholder="e.g. +91 9876543210"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              autoComplete="tel"
+              className="bg-muted/30 border-border/50 focus:border-primary/60"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required for WhatsApp reminders
+            </p>
+          </div>
+
           <Button
             type="submit"
-            disabled={!name.trim() || isSaving}
+            disabled={!name.trim() || !mobile.trim() || isSaving}
             className="w-full bg-gradient-to-r from-primary to-chart-5 hover:opacity-90"
           >
             {isSaving ? (

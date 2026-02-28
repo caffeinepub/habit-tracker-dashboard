@@ -255,3 +255,23 @@ export function useSaveCallerUserProfile() {
     },
   });
 }
+
+export function useSetHabitReminderTime() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      habitId,
+      reminderTime,
+    }: {
+      habitId: bigint;
+      reminderTime: string;
+    }) => {
+      if (!actor) return;
+      await actor.setHabitReminderTime(habitId, reminderTime);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["habits"] });
+    },
+  });
+}

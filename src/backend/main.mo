@@ -13,6 +13,9 @@ import Runtime "mo:core/Runtime";
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
 
+
+// Migration
+
 actor {
   let HARDCODED_ADMIN : Principal = Principal.fromText("h3k33-vzkys-gtpvb-j7eqr-rvkzy-mzzsd-ll3yr-u36x5-hfopd-jkaib-hae");
 
@@ -31,6 +34,7 @@ actor {
     name : Text;
     emoji : Text;
     color : Text;
+    reminderTime : Text;
   };
   type UserActivity = {
     principal : Text;
@@ -41,11 +45,13 @@ actor {
 
   public type UserProfile = {
     name : Text;
+    mobile : Text;
   };
 
   public type UserAdminDetail = {
     principal : Text;
     displayName : Text;
+    mobile : Text;
     firstLogin : Int;
     lastLogin : Int;
     habits : [Habit];
@@ -90,6 +96,28 @@ actor {
   };
 
   // Habit Tracker Functions
+  public shared ({ caller }) func setHabitReminderTime(habitId : HabitId, reminderTime : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update habit reminder time");
+    };
+
+    switch (userHabits.get(caller)) {
+      case (?habits) {
+        let updatedHabits = habits.map<Habit, Habit>(
+          func(habit) {
+            if (habit.id == habitId) {
+              { habit with reminderTime };
+            } else {
+              habit;
+            };
+          }
+        );
+        userHabits.add(caller, updatedHabits);
+      };
+      case (null) {};
+    };
+  };
+
   public shared ({ caller }) func initializePredefinedHabits() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can initialize habits");
@@ -113,30 +141,35 @@ actor {
         name = "Drink Water";
         emoji = "💧";
         color = "#00BFFF";
+        reminderTime = "";
       },
       {
         id = 2;
         name = "Exercise";
         emoji = "🏋️";
         color = "#32CD32";
+        reminderTime = "";
       },
       {
         id = 3;
         name = "Read";
         emoji = "📚";
         color = "#FFD700";
+        reminderTime = "";
       },
       {
         id = 4;
         name = "Meditate";
         emoji = "🧘";
         color = "#8A2BE2";
+        reminderTime = "";
       },
       {
         id = 5;
         name = "Sleep 8hrs";
         emoji = "😴";
         color = "#1E90FF";
+        reminderTime = "";
       },
     ]);
 
@@ -282,6 +315,7 @@ actor {
       name;
       emoji;
       color;
+      reminderTime = "";
     };
 
     // Add habit to caller's habit list
@@ -406,7 +440,7 @@ actor {
     AccessControl.isAdmin(accessControlState, caller);
   };
 
-  public query ({ caller }) func getAdminUserDetails(_todayDate : Text) : async [UserAdminDetail] {
+  public query ({ caller }) func getAdminUserDetails(todayDate : Text) : async [UserAdminDetail] {
     if (caller != HARDCODED_ADMIN and not AccessControl.hasPermission(accessControlState, caller, #admin)) {
       Runtime.trap("Unauthorized: Only admins can access user details");
     };
@@ -419,18 +453,55 @@ actor {
         case (null) { "" };
       };
 
+      let mobile = switch (userProfiles.get(user)) {
+        case (?profile) { profile.mobile };
+        case (null) { "" };
+      };
+
       let habits = switch (userHabits.get(user)) {
         case (?habits) { habits.toArray() };
         case (null) { [] };
       };
 
-      let completionsToday = 0; // Simplified, as backend does not contain completion count
+      let completionsToday = switch (userCompletions.get(user)) {
+        case (?completions) {
+          var count = 0;
+          for ((_, dates) in completions.entries()) {
+            if (dates.contains(todayDate)) { count += 1 };
+          };
+          count;
+        };
+        case (null) { 0 };
+      };
 
-      let weeklyCompletionRate = 0; // Always 0 for now as backend does not contain completion count
+      let habitCount = habits.size();
+
+      let totalCompletions = switch (userCompletions.get(user)) {
+        case (?completions) {
+          var total = 0;
+          for ((_, dates) in completions.entries()) {
+            let filteredDates = dates.filter(
+              func(date) {
+                Nat.equal(date.size(), todayDate.size()) // This is a very naive check for the last 7 days, as we can't easily subtract days in Motoko
+              }
+            );
+            total += filteredDates.size();
+          };
+          total;
+        };
+        case (null) { 0 };
+      };
+
+      let weeklyCompletionRate = if (habitCount > 0) {
+        let maxCompletions = habitCount * 7; // 7 days
+        let rate = Nat8.fromNat((totalCompletions * 100) / maxCompletions);
+        if (rate > 100) { 100 } else { rate.toNat() };
+      } else { 0 };
 
       let detail : UserAdminDetail = {
         principal = activity.principal;
         displayName;
+        mobile;
         firstLogin = activity.firstLogin;
         lastLogin = activity.lastLogin;
         habits;

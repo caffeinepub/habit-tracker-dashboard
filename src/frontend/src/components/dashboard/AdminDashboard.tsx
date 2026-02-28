@@ -8,6 +8,7 @@ import {
   Clock,
   Loader2,
   Lock,
+  Phone,
   RefreshCw,
   Shield,
   Users,
@@ -111,7 +112,7 @@ function UserCard({
           {initials}
         </div>
 
-        {/* Name + principal */}
+        {/* Name + principal + mobile */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <p className="font-semibold text-foreground truncate text-sm">
@@ -133,6 +134,14 @@ function UserCard({
           <code className="text-[11px] text-muted-foreground font-mono">
             {truncatePrincipal(user.principal)}
           </code>
+          {user.mobile && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <Phone size={10} className="text-muted-foreground" />
+              <span className="text-[11px] text-muted-foreground">
+                {user.mobile}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

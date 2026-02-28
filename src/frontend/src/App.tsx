@@ -13,6 +13,7 @@ import { HabitList } from "./components/dashboard/HabitList";
 import { LoginScreen } from "./components/dashboard/LoginScreen";
 import { ProfileSetupModal } from "./components/dashboard/ProfileSetupModal";
 import { ProgressCharts } from "./components/dashboard/ProgressCharts";
+import { SettingsPage } from "./components/dashboard/SettingsPage";
 import { Sidebar } from "./components/dashboard/Sidebar";
 import { StatsCards } from "./components/dashboard/StatsCards";
 import { WeeklySummary } from "./components/dashboard/WeeklySummary";
@@ -28,8 +29,10 @@ import {
   useIsAdmin,
   useRecordLogin,
   useSaveCallerUserProfile,
+  useSetHabitReminderTime,
   useToggleCompletion,
 } from "./hooks/useQueries";
+import { useReminderScheduler } from "./hooks/useReminderScheduler";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const pastDate = format(subDays(new Date(), 27), "yyyy-MM-dd");
@@ -90,9 +93,9 @@ export default function App() {
   }, [clear, queryClient]);
 
   const handleSaveProfile = useCallback(
-    (name: string) => {
+    (name: string, mobile: string) => {
       saveProfileMutation.mutate(
-        { name },
+        { name, mobile },
         {
           onSuccess: () => toast.success("Profile saved!"),
           onError: () => toast.error("Failed to save profile."),
@@ -149,6 +152,8 @@ export default function App() {
       isAdmin={!!isAdmin || tokenUnlockedAdmin}
       userName={userProfile?.name}
       userPrincipal={userPrincipal}
+      whatsappNumber={userProfile?.mobile}
+      userProfile={userProfile ?? null}
       onLogout={handleLogout}
       showProfileSetup={showProfileSetup}
       onSaveProfile={handleSaveProfile}
@@ -168,9 +173,11 @@ interface AuthenticatedAppProps {
   isAdmin: boolean;
   userName?: string;
   userPrincipal?: string;
+  whatsappNumber?: string;
+  userProfile: { name: string; mobile: string } | null;
   onLogout: () => void;
   showProfileSetup: boolean;
-  onSaveProfile: (name: string) => void;
+  onSaveProfile: (name: string, mobile: string) => void;
   isSavingProfile: boolean;
   onAdminTokenSubmit: (token: string) => void;
 }
@@ -185,6 +192,8 @@ function AuthenticatedApp({
   isAdmin,
   userName,
   userPrincipal,
+  whatsappNumber,
+  userProfile,
   onLogout,
   showProfileSetup,
   onSaveProfile,
@@ -200,6 +209,26 @@ function AuthenticatedApp({
   const toggleMutation = useToggleCompletion();
   const addHabitMutation = useAddHabit();
   const deleteHabitMutation = useDeleteHabit();
+  const setReminderMutation = useSetHabitReminderTime();
+
+  // Schedule browser notifications + WhatsApp links for habits with reminderTime
+  useReminderScheduler(habits, whatsappNumber);
+
+  const handleSetReminder = useCallback(
+    (habitId: bigint, time: string) => {
+      setReminderMutation.mutate(
+        { habitId, reminderTime: time },
+        {
+          onSuccess: () =>
+            toast.success(
+              time ? `Reminder set for ${time}` : "Reminder cleared",
+            ),
+          onError: () => toast.error("Failed to set reminder"),
+        },
+      );
+    },
+    [setReminderMutation],
+  );
 
   // Compute completed today
   const completedToday = useMemo(() => {
@@ -384,8 +413,20 @@ function AuthenticatedApp({
             </section>
           )}
 
+          {/* Settings page */}
+          {activeSection === "settings" && (
+            <section id="settings">
+              <SettingsPage
+                currentName={userProfile?.name}
+                currentMobile={userProfile?.mobile}
+                onSave={onSaveProfile}
+                isSaving={isSavingProfile}
+              />
+            </section>
+          )}
+
           {/* Main dashboard content */}
-          {activeSection !== "admin" && (
+          {activeSection !== "admin" && activeSection !== "settings" && (
             <>
               {/* Stats Cards */}
               <section id="dashboard">
@@ -428,6 +469,8 @@ function AuthenticatedApp({
                     completedToday={completedToday}
                     onToggle={handleToggle}
                     onDelete={handleDeleteHabit}
+                    whatsappNumber={whatsappNumber}
+                    onSetReminder={handleSetReminder}
                   />
                 </div>
               </section>

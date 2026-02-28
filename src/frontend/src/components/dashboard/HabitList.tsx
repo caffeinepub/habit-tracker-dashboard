@@ -1,7 +1,15 @@
 import { cn } from "@/lib/utils";
-import { Check, Sparkles, Trash2, Trophy } from "lucide-react";
+import {
+  Bell,
+  Check,
+  MessageCircle,
+  Sparkles,
+  Trash2,
+  Trophy,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Habit, StreakData } from "../../backend.d";
 
 interface HabitRowProps {
@@ -11,6 +19,9 @@ interface HabitRowProps {
   onToggle: () => void;
   onDelete?: (habitId: bigint) => void;
   delay: number;
+  whatsappNumber?: string;
+  reminderTime?: string;
+  onSetReminder?: (habitId: bigint, time: string) => void;
 }
 
 function HabitRow({
@@ -20,10 +31,16 @@ function HabitRow({
   onToggle,
   onDelete,
   delay,
+  whatsappNumber,
+  reminderTime,
+  onSetReminder,
 }: HabitRowProps) {
   const [isFlashing, setIsFlashing] = useState(false);
   const [wasJustCompleted, setWasJustCompleted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [localTime, setLocalTime] = useState(reminderTime ?? "");
+  const timeInputRef = useRef<HTMLInputElement>(null);
 
   const handleToggle = () => {
     if (!isCompleted) {
@@ -34,6 +51,48 @@ function HabitRow({
     }
     onToggle();
   };
+
+  const handleSendReminder = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text = encodeURIComponent(
+      `Reminder: Complete your habit "${habit.name}" today!`,
+    );
+    const url = whatsappNumber
+      ? `https://wa.me/${whatsappNumber.replace(/\D/g, "")}?text=${text}`
+      : `https://wa.me/?text=${text}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleBellClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowTimePicker((v) => !v);
+    if (!showTimePicker) {
+      // Focus the time input once it appears
+      setTimeout(() => timeInputRef.current?.focus(), 50);
+    }
+  };
+
+  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalTime(e.target.value);
+  };
+
+  const handleTimeBlur = () => {
+    if (onSetReminder) {
+      onSetReminder(habit.id, localTime);
+    }
+    setShowTimePicker(false);
+  };
+
+  const handleClearReminder = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLocalTime("");
+    if (onSetReminder) {
+      onSetReminder(habit.id, "");
+    }
+    setShowTimePicker(false);
+  };
+
+  const hasReminder = !!reminderTime;
 
   return (
     <motion.div
@@ -93,7 +152,7 @@ function HabitRow({
         {habit.emoji}
       </div>
 
-      {/* Name */}
+      {/* Name + reminder badge */}
       <div className="flex-1 min-w-0">
         <p
           className={cn(
@@ -114,9 +173,49 @@ function HabitRow({
             Nice work!
           </motion.p>
         )}
+        {hasReminder && !wasJustCompleted && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-400/80 font-medium mt-0.5">
+            ⏰ {reminderTime}
+          </span>
+        )}
+
+        {/* Inline time picker */}
+        <AnimatePresence>
+          {showTimePicker && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="mt-1.5 flex items-center gap-1.5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                ref={timeInputRef}
+                type="time"
+                value={localTime}
+                onChange={handleTimeChange}
+                onBlur={handleTimeBlur}
+                className="bg-muted/40 border border-border/50 rounded-lg text-xs text-foreground px-2 py-1 focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30 cursor-pointer"
+                style={{ colorScheme: "dark" }}
+                aria-label={`Set reminder time for ${habit.name}`}
+              />
+              {localTime && (
+                <button
+                  type="button"
+                  onClick={handleClearReminder}
+                  className="w-5 h-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  aria-label="Clear reminder"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Streaks */}
+      {/* Streaks + actions */}
       <div className="flex items-center gap-3 shrink-0">
         <div className="flex items-center gap-1.5">
           <span className="text-sm">🔥</span>
@@ -141,6 +240,41 @@ function HabitRow({
           <Trophy size={10} />
           <span>{streak.bestStreak.toString()}d</span>
         </div>
+
+        {/* Send Reminder (WhatsApp) — always visible */}
+        <button
+          type="button"
+          onClick={handleSendReminder}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-green-400 hover:text-green-300 hover:bg-green-400/10 transition-colors duration-150 shrink-0"
+          aria-label={`Send WhatsApp reminder for ${habit.name}`}
+          title="Send WhatsApp reminder"
+        >
+          <MessageCircle size={14} />
+        </button>
+
+        {/* Bell / reminder scheduler */}
+        {onSetReminder && (
+          <button
+            type="button"
+            onClick={handleBellClick}
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg transition-colors duration-150 shrink-0",
+              hasReminder
+                ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+            aria-label={
+              hasReminder
+                ? `Edit reminder for ${habit.name} (currently ${reminderTime})`
+                : `Set reminder for ${habit.name}`
+            }
+            title={
+              hasReminder ? `Reminder at ${reminderTime}` : "Set daily reminder"
+            }
+          >
+            <Bell size={14} />
+          </button>
+        )}
 
         {/* Delete button — visible on row hover */}
         {onDelete && (
@@ -175,6 +309,8 @@ interface HabitListProps {
   completedToday: Set<string>;
   onToggle: (habitId: bigint) => void;
   onDelete?: (habitId: bigint) => void;
+  whatsappNumber?: string;
+  onSetReminder?: (habitId: bigint, time: string) => void;
 }
 
 export function HabitList({
@@ -183,6 +319,8 @@ export function HabitList({
   completedToday,
   onToggle,
   onDelete,
+  whatsappNumber,
+  onSetReminder,
 }: HabitListProps) {
   const streakMap = new Map(streaks.map(([h, s]) => [h.id.toString(), s]));
   const completionCount = habits.filter((h) =>
@@ -231,6 +369,9 @@ export function HabitList({
             onToggle={() => onToggle(habit.id)}
             onDelete={onDelete}
             delay={i}
+            whatsappNumber={whatsappNumber}
+            reminderTime={habit.reminderTime || undefined}
+            onSetReminder={onSetReminder}
           />
         ))}
       </div>

@@ -17,6 +17,7 @@ export interface UserAdminDetail {
     completionsToday: bigint;
     habits: Array<Habit>;
     firstLogin: bigint;
+    mobile: string;
     lastLogin: bigint;
     weeklyCompletionRate: bigint;
 }
@@ -26,9 +27,11 @@ export interface Habit {
     name: string;
     color: string;
     emoji: string;
+    reminderTime: string;
 }
 export interface UserProfile {
     name: string;
+    mobile: string;
 }
 export interface UserActivity {
     principal: string;
@@ -46,7 +49,7 @@ export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     deleteHabit(habitId: HabitId): Promise<void>;
     getAdminStats(): Promise<Array<UserActivity>>;
-    getAdminUserDetails(_todayDate: string): Promise<Array<UserAdminDetail>>;
+    getAdminUserDetails(todayDate: string): Promise<Array<UserAdminDetail>>;
     getAllHabits(): Promise<Array<Habit>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
@@ -59,5 +62,6 @@ export interface backendInterface {
     recordLogin(): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     setAdminPrincipal(newAdmin: Principal): Promise<void>;
+    setHabitReminderTime(habitId: HabitId, reminderTime: string): Promise<void>;
     toggleCompletion(habitId: HabitId, date: string): Promise<void>;
 }

@@ -15,6 +15,7 @@ export interface Habit {
   'name' : string,
   'color' : string,
   'emoji' : string,
+  'reminderTime' : string,
 }
 export type HabitId = bigint;
 export interface StreakData { 'bestStreak' : bigint, 'currentStreak' : bigint }
@@ -30,10 +31,11 @@ export interface UserAdminDetail {
   'completionsToday' : bigint,
   'habits' : Array<Habit>,
   'firstLogin' : bigint,
+  'mobile' : string,
   'lastLogin' : bigint,
   'weeklyCompletionRate' : bigint,
 }
-export interface UserProfile { 'name' : string }
+export interface UserProfile { 'name' : string, 'mobile' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
@@ -59,6 +61,7 @@ export interface _SERVICE {
   'recordLogin' : ActorMethod<[], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'setAdminPrincipal' : ActorMethod<[Principal], undefined>,
+  'setHabitReminderTime' : ActorMethod<[HabitId, string], undefined>,
   'toggleCompletion' : ActorMethod<[HabitId, string], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;
