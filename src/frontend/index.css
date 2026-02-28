@@ -1,0 +1,187 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* Deep dark theme - HabitFlow */
+    --background: 0.12 0.02 265;
+    --foreground: 0.94 0.01 265;
+    --card: 0.16 0.025 265;
+    --card-foreground: 0.94 0.01 265;
+    --popover: 0.18 0.03 265;
+    --popover-foreground: 0.94 0.01 265;
+
+    /* Primary: violet/purple */
+    --primary: 0.62 0.22 290;
+    --primary-foreground: 0.98 0 0;
+
+    /* Secondary: indigo tinted */
+    --secondary: 0.22 0.04 265;
+    --secondary-foreground: 0.85 0.03 265;
+
+    /* Muted */
+    --muted: 0.2 0.03 265;
+    --muted-foreground: 0.55 0.04 265;
+
+    /* Accent: purple highlight */
+    --accent: 0.25 0.05 290;
+    --accent-foreground: 0.9 0.02 265;
+
+    /* Destructive */
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    /* Success: vibrant green */
+    --success: 0.7 0.19 155;
+    --success-foreground: 0.1 0.03 155;
+
+    /* Warning: amber */
+    --warning: 0.8 0.16 60;
+    --warning-foreground: 0.15 0 0;
+
+    /* Border, input, ring */
+    --border: 0.3 0.04 265 / 0.3;
+    --input: 0.25 0.04 265;
+    --ring: 0.62 0.22 290;
+
+    /* Chart colors */
+    --chart-1: 0.62 0.22 290;
+    --chart-2: 0.7 0.19 155;
+    --chart-3: 0.72 0.18 50;
+    --chart-4: 0.65 0.2 200;
+    --chart-5: 0.68 0.18 330;
+
+    /* Sidebar */
+    --sidebar: 0.1 0.02 265;
+    --sidebar-foreground: 0.9 0.02 265;
+    --sidebar-primary: 0.62 0.22 290;
+    --sidebar-primary-foreground: 0.98 0 0;
+    --sidebar-accent: 0.18 0.04 290;
+    --sidebar-accent-foreground: 0.85 0.03 265;
+    --sidebar-border: 0.25 0.04 265 / 0.4;
+    --sidebar-ring: 0.62 0.22 290;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Outfit', 'Sora', ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-gradient-purple {
+    background: linear-gradient(135deg, oklch(0.72 0.22 290), oklch(0.58 0.2 320));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glow-purple {
+    box-shadow: 0 0 20px oklch(0.62 0.22 290 / 0.3);
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px oklch(0.7 0.19 155 / 0.35);
+  }
+
+  .card-surface {
+    background: oklch(0.16 0.025 265);
+    border: 1px solid oklch(0.3 0.04 265 / 0.3);
+    box-shadow:
+      0 1px 3px oklch(0 0 0 / 0.4),
+      0 4px 16px oklch(0 0 0 / 0.2),
+      inset 0 1px 0 oklch(1 0 0 / 0.04);
+  }
+
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 2px 8px oklch(0 0 0 / 0.5),
+      0 8px 24px oklch(0 0 0 / 0.3),
+      inset 0 1px 0 oklch(1 0 0 / 0.06);
+  }
+
+  .habit-complete {
+    background: linear-gradient(135deg, oklch(0.7 0.19 155 / 0.15), oklch(0.65 0.18 165 / 0.1));
+    border-color: oklch(0.7 0.19 155 / 0.4) !important;
+  }
+
+  .sidebar-active {
+    background: linear-gradient(135deg, oklch(0.62 0.22 290 / 0.25), oklch(0.55 0.2 310 / 0.15));
+    border-left: 3px solid oklch(0.72 0.22 290);
+  }
+
+  .noise-bg {
+    position: relative;
+  }
+  .noise-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: 0;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: oklch(0.14 0.02 265);
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.3 0.06 290);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.45 0.1 290);
+}
+
+/* Habit check animation */
+@keyframes habit-flash {
+  0% { background-color: transparent; }
+  30% { background-color: oklch(0.7 0.19 155 / 0.2); }
+  100% { background-color: transparent; }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 12px oklch(0.62 0.22 290 / 0.3); }
+  50% { box-shadow: 0 0 24px oklch(0.62 0.22 290 / 0.6); }
+}
+
+.animate-habit-flash {
+  animation: habit-flash 0.7s ease-out forwards;
+}
+
+.animate-count-up {
+  animation: count-up 0.5s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
