@@ -1,51 +1,63 @@
 import Map "mo:core/Map";
 import Set "mo:core/Set";
 import Nat "mo:core/Nat";
-import Text "mo:core/Text";
-import List "mo:core/List";
+import Time "mo:core/Time";
 import Array "mo:core/Array";
 import Iter "mo:core/Iter";
-import Order "mo:core/Order";
-import Time "mo:core/Time";
+import List "mo:core/List";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
-
-import AccessControl "authorization/access-control";
+import Authorization "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
-import Migration "migration";
 
-// Migration
-(with migration = Migration.run)
+
+// Apply migration during upgrade using with syntax.
+
 actor {
-  let HARDCODED_ADMIN : Principal = Principal.fromText("h3k33-vzkys-gtpvb-j7eqr-rvkzy-mzzsd-ll3yr-u36x5-hfopd-jkaib-hae");
+  public type HabitId = Nat;
 
-  // Initialize the access control system
-  let accessControlState = AccessControl.initState();
-  include MixinAuthorization(accessControlState);
-
-  // Types
-  type HabitId = Nat;
-  type StreakData = {
-    currentStreak : Nat;
-    bestStreak : Nat;
-  };
-  type Habit = {
+  public type Habit = {
     id : HabitId;
     name : Text;
     emoji : Text;
     color : Text;
     reminderTime : Text;
+    customReminderMsg : Text;
+    category : Text;
+    difficulty : Text;
+    goalDescription : Text;
+    goalTargetCount : Nat;
+    goalDeadline : Text;
   };
-  type UserActivity = {
-    principal : Text;
-    firstLogin : Int;
-    lastLogin : Int;
-    habitCount : Nat;
+
+  public type StreakData = {
+    currentStreak : Nat;
+    bestStreak : Nat;
+  };
+
+  public type Achievement = {
+    id : Text;
+    name : Text;
+    description : Text;
+    earned : Bool;
+    earnedAt : Int;
   };
 
   public type UserProfile = {
     name : Text;
     mobile : Text;
+    avatarBase64 : Text;
+    streakTokens : Nat;
+    points : Nat;
+    habitOrder : [Nat];
+    accentColor : Text;
+  };
+
+  public type UserActivity = {
+    principal : Text;
+    firstLogin : Int;
+    lastLogin : Int;
+    habitCount : Nat;
   };
 
   public type UserAdminDetail = {
@@ -59,181 +71,288 @@ actor {
     weeklyCompletionRate : Nat;
   };
 
-  // Habit module with comparison for sorting
-  module Habit {
-    public func compare(h1 : Habit, h2 : Habit) : Order.Order {
-      Nat.compare(h1.id, h2.id);
-    };
+  public type LeaderboardEntry = {
+    principal : Text;
+    displayName : Text;
+    points : Nat;
   };
 
-  // Storage
+  public type WeeklyChallenge = {
+    title : Text;
+    description : Text;
+    targetCompletionsPerDay : Nat;
+    deadline : Text;
+    setBy : Text;
+    createdAt : Int;
+  };
+
+  public type DetailedStats = {
+    totalCompletions : Nat;
+    totalDaysTracked : Nat;
+    averageCompletionRate : Nat;
+    bestStreakEver : Nat;
+    habitsCompletedToday : Nat;
+    currentStreakDays : Nat;
+  };
+
+  let accessControlState = Authorization.initState();
+  include MixinAuthorization(accessControlState);
+
   let userHabits = Map.empty<Principal, List.List<Habit>>();
   let userCompletions = Map.empty<Principal, Map.Map<HabitId, Set.Set<Text>>>();
   let nextHabitId = Map.empty<Principal, Nat>();
   let userActivity = Map.empty<Principal, UserActivity>();
   let userProfiles = Map.empty<Principal, UserProfile>();
-
-  // User Profile Functions (required by frontend)
-  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access profiles");
+  let habitNotes = Map.empty<Principal, Map.Map<HabitId, Map.Map<Text, Text>>>();
+  let userMoods = Map.empty<Principal, Map.Map<Text, Text>>();
+  let following = Map.empty<Principal, Set.Set<Principal>>();
+  let challengeMembers = Set.empty<Principal>();
+  let currentChallenge = List.empty<WeeklyChallenge>();
+  // Habit management functions
+  public shared ({ caller }) func addHabit(name : Text, emoji : Text, color : Text, category : Text, difficulty : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add habits");
     };
-    userProfiles.get(caller);
+
+    let habitId = switch (nextHabitId.get(caller)) {
+      case (?id) { id };
+      case (null) { 1 };
+    };
+
+    let habit : Habit = {
+      id = habitId;
+      name;
+      emoji;
+      color;
+      reminderTime = "";
+      customReminderMsg = "";
+      category;
+      difficulty;
+      goalDescription = "";
+      goalTargetCount = 0;
+      goalDeadline = "";
+    };
+
+    let habits = switch (userHabits.get(caller)) {
+      case (?existing) {
+        existing.add(habit);
+        existing;
+      };
+      case (null) {
+        let newHabits = List.empty<Habit>();
+        newHabits.add(habit);
+        newHabits;
+      };
+    };
+    userHabits.add(caller, habits);
+
+    let completionMap = switch (userCompletions.get(caller)) {
+      case (?completions) {
+        completions.add(habit.id, Set.empty<Text>());
+        completions;
+      };
+      case (null) {
+        let newCompletions = Map.empty<HabitId, Set.Set<Text>>();
+        newCompletions.add(habit.id, Set.empty<Text>());
+        newCompletions;
+      };
+    };
+    userCompletions.add(caller, completionMap);
+
+    nextHabitId.add(caller, habitId + 1);
   };
 
-  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
-    };
-    userProfiles.get(user);
-  };
-
-  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
-    userProfiles.add(caller, profile);
-  };
-
-  // Habit Tracker Functions
-  public shared ({ caller }) func setHabitReminderTime(habitId : HabitId, reminderTime : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update habit reminder time");
+  public shared ({ caller }) func updateHabit(habitId : HabitId, name : Text, emoji : Text, color : Text, category : Text, difficulty : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update habits");
     };
 
     switch (userHabits.get(caller)) {
       case (?habits) {
-        let updatedHabits = habits.map<Habit, Habit>(
+        let updated = habits.map<Habit, Habit>(
           func(habit) {
             if (habit.id == habitId) {
-              { habit with reminderTime };
+              {
+                habit with
+                name;
+                emoji;
+                color;
+                category;
+                difficulty;
+              };
             } else {
               habit;
             };
           }
         );
-        userHabits.add(caller, updatedHabits);
+        userHabits.add(caller, updated);
       };
       case (null) {};
     };
   };
 
-  public shared ({ caller }) func initializePredefinedHabits() : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can initialize habits");
+  public shared ({ caller }) func deleteHabit(habitId : HabitId) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete habits");
     };
 
-    // Check if caller already has habits
     switch (userHabits.get(caller)) {
-      case (?_) {
-        // User already has habits, do nothing
-        return;
+      case (?habits) {
+        let filtered = habits.filter(func(h) { h.id != habitId });
+        userHabits.add(caller, filtered);
+
+        switch (userCompletions.get(caller)) {
+          case (?completions) {
+            completions.remove(habitId);
+          };
+          case (null) {};
+        };
       };
-      case (null) {
-        // Proceed with initialization
-      };
+      case (null) {};
+    };
+  };
+
+  public shared ({ caller }) func setHabitReminderTime(habitId : HabitId, reminderTime : Text, customMsg : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set reminder time");
     };
 
-    // Create list of initial habits
-    let initialHabits = List.fromArray<Habit>([
+    switch (userHabits.get(caller)) {
+      case (?habits) {
+        let updated = habits.map<Habit, Habit>(
+          func(habit) {
+            if (habit.id == habitId) {
+              { habit with reminderTime; customReminderMsg = customMsg };
+            } else {
+              habit;
+            };
+          }
+        );
+        userHabits.add(caller, updated);
+      };
+      case (null) {};
+    };
+  };
+
+  public shared ({ caller }) func setHabitGoal(habitId : HabitId, description : Text, targetCount : Nat, deadline : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set habit goal");
+    };
+
+    switch (userHabits.get(caller)) {
+      case (?habits) {
+        let updated = habits.map<Habit, Habit>(
+          func(habit) {
+            if (habit.id == habitId) {
+              {
+                habit with
+                goalDescription = description;
+                goalTargetCount = targetCount;
+                goalDeadline = deadline;
+              };
+            } else {
+              habit;
+            };
+          }
+        );
+        userHabits.add(caller, updated);
+      };
+      case (null) {};
+    };
+  };
+
+  public shared ({ caller }) func reorderHabits(order : [HabitId]) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can reorder habits");
+    };
+
+    let profile = switch (userProfiles.get(caller)) {
+      case (?p) { p };
+      case (null) { Runtime.trap("Profile not found") };
+    };
+
+    userProfiles.add(caller, { profile with habitOrder = order });
+  };
+
+  public shared ({ caller }) func initializePredefinedHabits() : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can initialize predefined habits");
+    };
+
+    switch (userHabits.get(caller)) {
+      case (?habits) {
+        if (habits.size() > 0) { Runtime.trap("Habits already exist") };
+      };
+      case (null) {};
+    };
+
+    let initialHabits : [Habit] = [
       {
         id = 1;
         name = "Drink Water";
         emoji = "💧";
         color = "#00BFFF";
         reminderTime = "";
+        customReminderMsg = "";
+        category = "Health";
+        difficulty = "Easy";
+        goalDescription = "";
+        goalTargetCount = 0;
+        goalDeadline = "";
       },
-      {
-        id = 2;
-        name = "Exercise";
-        emoji = "🏋️";
-        color = "#32CD32";
-        reminderTime = "";
-      },
-      {
-        id = 3;
-        name = "Read";
-        emoji = "📚";
-        color = "#FFD700";
-        reminderTime = "";
-      },
-      {
-        id = 4;
-        name = "Meditate";
-        emoji = "🧘";
-        color = "#8A2BE2";
-        reminderTime = "";
-      },
-      {
-        id = 5;
-        name = "Sleep 8hrs";
-        emoji = "😴";
-        color = "#1E90FF";
-        reminderTime = "";
-      },
-    ]);
+    ];
 
-    // Store initial habits for caller
-    userHabits.add(caller, initialHabits);
-
-    // Initialize completions for each habit
-    let completions = Map.empty<HabitId, Set.Set<Text>>();
-    for (habit in initialHabits.values()) {
-      completions.add(habit.id, Set.empty<Text>());
-    };
-    userCompletions.add(caller, completions);
-
-    // Set next habit ID for caller
-    nextHabitId.add(caller, 6);
+    userHabits.add(caller, List.fromArray<Habit>(initialHabits));
+    nextHabitId.add(caller, 2);
   };
 
   public query ({ caller }) func getAllHabits() : async [Habit] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access habits");
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get habits");
     };
 
     switch (userHabits.get(caller)) {
-      case (?habits) {
-        let habitsArray = habits.toArray();
-        habitsArray.sort();
-      };
+      case (?habits) { habits.toArray() };
       case (null) { [] };
     };
   };
 
-  public query ({ caller }) func getStreakData() : async [(Habit, StreakData)] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access streak data");
+  // Habit completion tracking.
+  public shared ({ caller }) func toggleCompletion(habitId : HabitId, date : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can toggle completions");
     };
 
-    let results = List.empty<(Habit, StreakData)>();
-
-    switch (userHabits.get(caller)) {
-      case (?habits) {
-        for (habit in habits.values()) {
-          let completions = switch (userCompletions.get(caller)) {
-            case (?completionMap) {
-              switch (completionMap.get(habit.id)) {
-                case (?set) { set.values().toArray() };
-                case (null) { [] };
-              };
+    switch (userCompletions.get(caller)) {
+      case (?completions) {
+        switch (completions.get(habitId)) {
+          case (?set) {
+            if (set.contains(date)) {
+              set.remove(date);
+            } else {
+              set.add(date);
             };
-            case (null) { [] };
           };
-
-          if (completions.size() > 0) {
-            results.add((habit, { currentStreak = completions.size(); bestStreak = completions.size() }));
+          case (null) {
+            let newSet = Set.empty<Text>();
+            newSet.add(date);
+            completions.add(habitId, newSet);
           };
         };
       };
-      case (null) {};
+      case (null) {
+        let newMap = Map.empty<HabitId, Set.Set<Text>>();
+        let newSet = Set.empty<Text>();
+        newSet.add(date);
+        newMap.add(habitId, newSet);
+        userCompletions.add(caller, newMap);
+      };
     };
-    results.toArray();
   };
 
   public query ({ caller }) func getCompletionsForRange(startDate : Text, endDate : Text) : async [(Habit, [Text])] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access completions");
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get range completions");
     };
 
     let results = List.empty<(Habit, [Text])>();
@@ -265,106 +384,473 @@ actor {
       };
       case (null) {};
     };
+
     results.toArray();
   };
 
-  public shared ({ caller }) func toggleCompletion(habitId : HabitId, date : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can toggle completions");
+  public query ({ caller }) func getStreakData() : async [(Habit, StreakData)] {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can access streak data");
     };
 
+    let results = List.empty<(Habit, StreakData)>();
+
+    switch (userHabits.get(caller)) {
+      case (?habits) {
+        for (habit in habits.values()) {
+          let completions = switch (userCompletions.get(caller)) {
+            case (?completionMap) {
+              switch (completionMap.get(habit.id)) {
+                case (?set) { set.values().toArray() };
+                case (null) { [] };
+              };
+            };
+            case (null) { [] };
+          };
+
+          if (completions.size() > 0) {
+            results.add((habit, { currentStreak = completions.size(); bestStreak = completions.size() }));
+          };
+        };
+      };
+      case (null) {};
+    };
+
+    results.toArray();
+  };
+
+  // Habit notes.
+  public shared ({ caller }) func saveHabitNote(habitId : HabitId, date : Text, note : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save habit notes");
+    };
+
+    let userNotesMap = switch (habitNotes.get(caller)) {
+      case (?notes) { notes };
+      case (null) {
+        let newMap = Map.empty<HabitId, Map.Map<Text, Text>>();
+        habitNotes.add(caller, newMap);
+        newMap;
+      };
+    };
+
+    let habitNotesMap = switch (userNotesMap.get(habitId)) {
+      case (?notes) { notes };
+      case (null) {
+        let newMap = Map.empty<Text, Text>();
+        userNotesMap.add(habitId, newMap);
+        newMap;
+      };
+    };
+
+    habitNotesMap.add(date, note);
+  };
+
+  public query ({ caller }) func getHabitNotes(habitId : HabitId) : async [(Text, Text)] {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get habit notes");
+    };
+
+    switch (habitNotes.get(caller)) {
+      case (?userNotesMap) {
+        switch (userNotesMap.get(habitId)) {
+          case (?habitNotesMap) {
+            habitNotesMap.entries().toArray();
+          };
+          case (null) { [] };
+        };
+      };
+      case (null) { [] };
+    };
+  };
+
+  // Mood tracking.
+  public shared ({ caller }) func saveMood(date : Text, mood : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save moods");
+    };
+
+    let moodMap = switch (userMoods.get(caller)) {
+      case (?moods) { moods };
+      case (null) {
+        let newMap = Map.empty<Text, Text>();
+        userMoods.add(caller, newMap);
+        newMap;
+      };
+    };
+
+    moodMap.add(date, mood);
+  };
+
+  public query ({ caller }) func getMoods() : async [(Text, Text)] {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get moods");
+    };
+
+    switch (userMoods.get(caller)) {
+      case (?moodMap) { moodMap.entries().toArray() };
+      case (null) { [] };
+    };
+  };
+
+  // Detailed stats.
+  public query ({ caller }) func getDetailedStats(todayDate : Text) : async DetailedStats {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get detailed stats");
+    };
+
+    var totalCompletions : Nat = 0;
+    var bestStreakEver : Nat = 0;
+    var habitsCompletedToday : Nat = 0;
+    let distinctDays = Set.empty<Text>();
+
+    switch (userCompletions.get(caller)) {
+      case (?completionMap) {
+        for ((habitId, dateSet) in completionMap.entries()) {
+          let count = dateSet.size();
+          totalCompletions += count;
+          if (count > bestStreakEver) {
+            bestStreakEver := count;
+          };
+          if (dateSet.contains(todayDate)) {
+            habitsCompletedToday += 1;
+          };
+          for (date in dateSet.values()) {
+            distinctDays.add(date);
+          };
+        };
+      };
+      case (null) {};
+    };
+
+    let totalDaysTracked = distinctDays.size();
+    let averageCompletionRate = if (totalDaysTracked > 0) {
+      (totalCompletions * 100) / totalDaysTracked;
+    } else { 0 };
+
+    {
+      totalCompletions;
+      totalDaysTracked;
+      averageCompletionRate;
+      bestStreakEver;
+      habitsCompletedToday;
+      currentStreakDays = totalDaysTracked;
+    };
+  };
+
+  // Achievements.
+  public query ({ caller }) func getAchievements() : async [Achievement] {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get achievements");
+    };
+
+    let achievements = List.empty<Achievement>();
+    var totalCompletions : Nat = 0;
+    var habitCount : Nat = 0;
+    var maxStreak : Nat = 0;
+    let distinctDays = Set.empty<Text>();
+
+    switch (userHabits.get(caller)) {
+      case (?habits) { habitCount := habits.size() };
+      case (null) {};
+    };
+
+    switch (userCompletions.get(caller)) {
+      case (?completionMap) {
+        for ((habitId, dateSet) in completionMap.entries()) {
+          let count = dateSet.size();
+          totalCompletions += count;
+          if (count > maxStreak) {
+            maxStreak := count;
+          };
+          for (date in dateSet.values()) {
+            distinctDays.add(date);
+          };
+        };
+      };
+      case (null) {};
+    };
+
+    achievements.add({
+      id = "first_habit";
+      name = "First Habit";
+      description = "Created your first habit";
+      earned = habitCount >= 1;
+      earnedAt = if (habitCount >= 1) { Time.now() } else { 0 };
+    });
+
+    achievements.add({
+      id = "habit_collector";
+      name = "Habit Collector";
+      description = "Created 5+ habits";
+      earned = habitCount >= 5;
+      earnedAt = if (habitCount >= 5) { Time.now() } else { 0 };
+    });
+
+    achievements.add({
+      id = "centurion";
+      name = "Centurion";
+      description = "100+ total completions";
+      earned = totalCompletions >= 100;
+      earnedAt = if (totalCompletions >= 100) { Time.now() } else { 0 };
+    });
+
+    achievements.add({
+      id = "consistency_king";
+      name = "Consistency King";
+      description = "30+ days with completions";
+      earned = distinctDays.size() >= 30;
+      earnedAt = if (distinctDays.size() >= 30) { Time.now() } else { 0 };
+    });
+
+    achievements.add({
+      id = "streak_7";
+      name = "Week Warrior";
+      description = "7+ day streak";
+      earned = maxStreak >= 7;
+      earnedAt = if (maxStreak >= 7) { Time.now() } else { 0 };
+    });
+
+    achievements.add({
+      id = "streak_30";
+      name = "Month Master";
+      description = "30+ day streak";
+      earned = maxStreak >= 30;
+      earnedAt = if (maxStreak >= 30) { Time.now() } else { 0 };
+    });
+
+    achievements.add({
+      id = "month_100";
+      name = "Century Club";
+      description = "100+ completions in a month";
+      earned = totalCompletions >= 100;
+      earnedAt = if (totalCompletions >= 100) { Time.now() } else { 0 };
+    });
+
+    achievements.toArray();
+  };
+
+  // Profile functions.
+  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save their profiles");
+    };
+    userProfiles.add(caller, profile);
+  };
+
+  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can access their profiles");
+    };
+    userProfiles.get(caller);
+  };
+
+  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
+    if (caller != user and not Authorization.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Can only view your own profile");
+    };
+    userProfiles.get(user);
+  };
+
+  // Points and leaderboard functions.
+  public shared ({ caller }) func addPoints(pts : Nat) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add points");
+    };
+
+    let profile = switch (userProfiles.get(caller)) {
+      case (?p) { p };
+      case (null) { Runtime.trap("Profile not found") };
+    };
+
+    let updatedProfile = {
+      profile with
+      points = profile.points + pts;
+    };
+    userProfiles.add(caller, updatedProfile);
+  };
+
+  public query func getLeaderboard() : async [LeaderboardEntry] {
+    // No authorization check - accessible to all users including guests
+    let entries = List.empty<LeaderboardEntry>();
+
+    for ((principal, profile) in userProfiles.entries()) {
+      let entry = {
+        principal = principal.toText();
+        displayName = profile.name;
+        points = profile.points;
+      };
+      entries.add(entry);
+    };
+
+    let array = entries.toArray();
+
+    array.sort(
+      func(a, b) {
+        Nat.compare(b.points, a.points);
+      }
+    );
+  };
+
+  // Social features.
+  public shared ({ caller }) func followUser(target : Principal) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can follow others");
+    };
+
+    let followSet = switch (following.get(caller)) {
+      case (?set) { set };
+      case (null) {
+        let newSet = Set.empty<Principal>();
+        following.add(caller, newSet);
+        newSet;
+      };
+    };
+
+    followSet.add(target);
+  };
+
+  public shared ({ caller }) func unfollowUser(target : Principal) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can unfollow others");
+    };
+
+    switch (following.get(caller)) {
+      case (?followSet) {
+        followSet.remove(target);
+      };
+      case (null) {};
+    };
+  };
+
+  public query ({ caller }) func getFollowing() : async [Text] {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get following list");
+    };
+
+    switch (following.get(caller)) {
+      case (?followSet) {
+        followSet.values().map<Principal, Text>(func(p) { p.toText() }).toArray();
+      };
+      case (null) { [] };
+    };
+  };
+
+  public query ({ caller }) func getFriendLeaderboard() : async [LeaderboardEntry] {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get friend leaderboard");
+    };
+
+    let entries = List.empty<LeaderboardEntry>();
+
+    // Add caller
+    switch (userProfiles.get(caller)) {
+      case (?profile) {
+        entries.add({
+          principal = caller.toText();
+          displayName = profile.name;
+          points = profile.points;
+        });
+      };
+      case (null) {};
+    };
+
+    // Add followed users
+    switch (following.get(caller)) {
+      case (?followSet) {
+        for (user in followSet.values()) {
+          switch (userProfiles.get(user)) {
+            case (?profile) {
+              entries.add({
+                principal = user.toText();
+                displayName = profile.name;
+                points = profile.points;
+              });
+            };
+            case (null) {};
+          };
+        };
+      };
+      case (null) {};
+    };
+
+    let array = entries.toArray();
+    array.sort(
+      func(a, b) {
+        Nat.compare(b.points, a.points);
+      }
+    );
+  };
+
+  // Weekly challenge.
+  public shared ({ caller }) func setWeeklyChallenge(title : Text, description : Text, targetCompletionsPerDay : Nat, deadline : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can set weekly challenge");
+    };
+
+    let challenge : WeeklyChallenge = {
+      title;
+      description;
+      targetCompletionsPerDay;
+      deadline;
+      setBy = caller.toText();
+      createdAt = Time.now();
+    };
+
+    currentChallenge.clear();
+    currentChallenge.add(challenge);
+  };
+
+  public query ({ caller }) func getWeeklyChallenge() : async ?WeeklyChallenge {
+    // No authorization check - accessible to all users including guests
+    if (currentChallenge.size() == 0) {
+      null;
+    } else {
+      let iter = currentChallenge.values();
+      iter.next();
+    };
+  };
+
+  public shared ({ caller }) func joinWeeklyChallenge() : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can join weekly challenge");
+    };
+
+    challengeMembers.add(caller);
+  };
+
+  public query func getChallengeMembersCount() : async Nat {
+    // No authorization check - accessible to all users including guests
+    challengeMembers.size();
+  };
+
+  // Streak tokens.
+  public shared ({ caller }) func spendStreakToken(habitId : HabitId, missedDate : Text) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can spend streak tokens");
+    };
+
+    let profile = switch (userProfiles.get(caller)) {
+      case (?p) { p };
+      case (null) { Runtime.trap("Profile not found") };
+    };
+
+    if (profile.streakTokens == 0) {
+      Runtime.trap("No streak tokens available");
+    };
+
+    let updatedProfile = {
+      profile with
+      streakTokens = profile.streakTokens - 1;
+    };
+    userProfiles.add(caller, updatedProfile);
+
+    // Add the missed date as a completion
     switch (userCompletions.get(caller)) {
       case (?completions) {
         switch (completions.get(habitId)) {
           case (?set) {
-            if (set.contains(date)) {
-              set.remove(date);
-            } else {
-              set.add(date);
-            };
-          };
-          case (null) {
-            let newSet = Set.empty<Text>();
-            newSet.add(date);
-            completions.add(habitId, newSet);
-          };
-        };
-      };
-      case (null) {
-        let newCompletions = Map.empty<HabitId, Set.Set<Text>>();
-        let newSet = Set.empty<Text>();
-        newSet.add(date);
-        newCompletions.add(habitId, newSet);
-        userCompletions.add(caller, newCompletions);
-      };
-    };
-  };
-
-  public shared ({ caller }) func addHabit(name : Text, emoji : Text, color : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add habits");
-    };
-
-    let habitId = switch (nextHabitId.get(caller)) {
-      case (?id) { id };
-      case (null) { 1 };
-    };
-
-    let habit : Habit = {
-      id = habitId;
-      name;
-      emoji;
-      color;
-      reminderTime = "";
-    };
-
-    // Add habit to caller's habit list
-    let habits = switch (userHabits.get(caller)) {
-      case (?existingHabits) {
-        existingHabits.add(habit);
-        existingHabits;
-      };
-      case (null) {
-        let newHabits = List.empty<Habit>();
-        newHabits.add(habit);
-        newHabits;
-      };
-    };
-    userHabits.add(caller, habits);
-
-    // Initialize completion set for new habit
-    let completionMap = switch (userCompletions.get(caller)) {
-      case (?completions) {
-        completions.add(habit.id, Set.empty<Text>());
-        completions;
-      };
-      case (null) {
-        let newCompletions = Map.empty<HabitId, Set.Set<Text>>();
-        newCompletions.add(habit.id, Set.empty<Text>());
-        newCompletions;
-      };
-    };
-    userCompletions.add(caller, completionMap);
-
-    // Increment next habit ID for caller
-    nextHabitId.add(caller, habitId + 1);
-  };
-
-  public shared ({ caller }) func deleteHabit(habitId : HabitId) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete habits");
-    };
-
-    switch (userHabits.get(caller)) {
-      case (?habits) {
-        let filteredHabits = habits.filter(
-          func(h : Habit) : Bool { h.id != habitId }
-        );
-        userHabits.add(caller, filteredHabits);
-
-        switch (userCompletions.get(caller)) {
-          case (?completions) {
-            completions.remove(habitId);
+            set.add(missedDate);
           };
           case (null) {};
         };
@@ -373,179 +859,134 @@ actor {
     };
   };
 
+  // User activity tracking.
   public shared ({ caller }) func recordLogin() : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not (Authorization.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can record login");
     };
 
-    let currentTime = Time.now();
+    let now = Time.now();
     let habitCount = switch (userHabits.get(caller)) {
       case (?habits) { habits.size() };
       case (null) { 0 };
     };
 
-    switch (userActivity.get(caller)) {
-      case (?existingActivity) {
-        let updatedActivity = {
-          existingActivity with
-          lastLogin = currentTime;
+    let activity = switch (userActivity.get(caller)) {
+      case (?existing) {
+        {
+          existing with
+          lastLogin = now;
           habitCount;
         };
-        userActivity.add(caller, updatedActivity);
       };
       case (null) {
-        let newActivity = {
+        {
           principal = caller.toText();
-          firstLogin = currentTime;
-          lastLogin = currentTime;
+          firstLogin = now;
+          lastLogin = now;
           habitCount;
         };
-        userActivity.add(caller, newActivity);
       };
     };
+
+    userActivity.add(caller, activity);
   };
 
-  public shared ({ caller }) func setAdminPrincipal(newAdmin : Principal) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can assign admin role");
-    };
-    AccessControl.assignRole(accessControlState, caller, newAdmin, #admin);
-  };
-
+  // Admin functions.
   public query ({ caller }) func getAdminStats() : async [UserActivity] {
-    if (not (caller == HARDCODED_ADMIN or AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can access stats");
+    if (not (Authorization.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can access admin stats");
     };
 
-    let activities = List.empty<UserActivity>();
-
-    for ((user, activity) in userActivity.entries()) {
-      let liveHabitCount = switch (userHabits.get(user)) {
-        case (?habits) { habits.size() };
-        case (null) { 0 };
-      };
-
-      let updatedActivity = {
-        activity with
-        habitCount = liveHabitCount; // Use live count from userHabits
-      };
-
-      activities.add(updatedActivity);
-    };
-    activities.toArray();
+    userActivity.values().toArray();
   };
 
-  public query ({ caller }) func isAdmin() : async Bool {
-    if (caller == HARDCODED_ADMIN) { return true };
-    AccessControl.isAdmin(accessControlState, caller);
-  };
-
-  // Bugfix 1: Fixed getAdminUserDetails implementation (only left bugfix in code, deleted old code).
   public query ({ caller }) func getAdminUserDetails(todayDate : Text) : async [UserAdminDetail] {
-    if (not (caller == HARDCODED_ADMIN or AccessControl.hasPermission(accessControlState, caller, #admin))) {
+    if (not (Authorization.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can access user details");
     };
 
-    // Step 1: Collect all principals from all maps
-    let allPrincipals = Set.empty<Principal>();
-
-    // Add principals from userActivity
-    for ((principal, _) in userActivity.entries()) {
-      allPrincipals.add(principal);
-    };
-
-    // Add principals from userProfiles
-    for ((principal, _) in userProfiles.entries()) {
-      allPrincipals.add(principal);
-    };
-
-    // Add principals from userHabits
-    for ((principal, _) in userHabits.entries()) {
-      allPrincipals.add(principal);
-    };
-
-    // Step 2: Build details for each principal
     let details = List.empty<UserAdminDetail>();
 
-    for (p in allPrincipals.values()) {
-      let principal = p;
-
-      // Fetch optional activity data
-      let activityOpt = userActivity.get(principal);
-
-      // Determine names and activity data
-      let displayName = switch (userProfiles.get(p)) {
-        case (?profile) { profile.name };
-        case (null) { "" };
+    for ((principal, activity) in userActivity.entries()) {
+      let profile = switch (userProfiles.get(principal)) {
+        case (?p) { p };
+        case (null) {
+          {
+            name = "";
+            mobile = "";
+            avatarBase64 = "";
+            streakTokens = 0;
+            points = 0;
+            habitOrder = [];
+            accentColor = "";
+          };
+        };
       };
 
-      let mobile = switch (userProfiles.get(principal)) {
-        case (?profile) { profile.mobile };
-        case (null) { "" };
-      };
-
-      let (firstLogin, lastLogin) = switch (activityOpt) {
-        case (?activity) { (activity.firstLogin, activity.lastLogin) };
-        case (null) { (0, 0) };
-      };
-
-      // Fetch habits and count
       let habits = switch (userHabits.get(principal)) {
         case (?h) { h.toArray() };
         case (null) { [] };
       };
-      let habitCount = habits.size();
 
-      // Count completions today
-      let completionsToday = switch (userCompletions.get(principal)) {
-        case (?completions) {
-          var count = 0;
-          for ((_, dates) in completions.entries()) {
-            if (dates.contains(todayDate)) { count += 1 };
+      var completionsToday : Nat = 0;
+      var weeklyCompletions : Nat = 0;
+
+      switch (userCompletions.get(principal)) {
+        case (?completionMap) {
+          for ((habitId, dateSet) in completionMap.entries()) {
+            if (dateSet.contains(todayDate)) {
+              completionsToday += 1;
+            };
+            weeklyCompletions += dateSet.size();
           };
-          count;
         };
-        case (null) { 0 };
+        case (null) {};
       };
 
-      // Calculate weekly completion rate
-      let totalCompletions = switch (userCompletions.get(principal)) {
-        case (?completions) {
-          var total = 0;
-          for ((_, dates) in completions.entries()) {
-            let filteredDates = dates.filter(
-              func(date) {
-                Nat.equal(date.size(), todayDate.size()) // This is a very naive check for the last 7 days, as we can't easily subtract days in Motoko
-              }
-            );
-            total += filteredDates.size();
-          };
-          total;
-        };
-        case (null) { 0 };
-      };
-
-      let weeklyCompletionRate = if (habitCount > 0) {
-        let maxCompletions = habitCount * 7; // 7 days
-        let rate = (totalCompletions * 100) / maxCompletions;
-        if (rate > 100) { 100 } else { rate };
+      let weeklyCompletionRate = if (habits.size() > 0) {
+        (weeklyCompletions * 100) / (habits.size() * 7);
       } else { 0 };
 
-      // Build detail record
-      let detail : UserAdminDetail = {
+      details.add({
         principal = principal.toText();
-        displayName;
-        mobile;
-        firstLogin;
-        lastLogin;
+        displayName = profile.name;
+        mobile = profile.mobile;
+        firstLogin = activity.firstLogin;
+        lastLogin = activity.lastLogin;
         habits;
         completionsToday;
         weeklyCompletionRate;
-      };
-
-      details.add(detail);
+      });
     };
 
     details.toArray();
+  };
+
+  public shared ({ caller }) func removeUser(user : Principal) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can remove users");
+    };
+
+    userHabits.remove(user);
+    userCompletions.remove(user);
+    nextHabitId.remove(user);
+    userActivity.remove(user);
+    userProfiles.remove(user);
+    habitNotes.remove(user);
+    userMoods.remove(user);
+    following.remove(user);
+    challengeMembers.remove(user);
+  };
+
+  public shared ({ caller }) func setAdminPrincipal(newAdmin : Principal) : async () {
+    if (not (Authorization.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can assign admin role");
+    };
+    Authorization.assignRole(accessControlState, caller, newAdmin, #admin);
+  };
+
+  public query ({ caller }) func isAdmin() : async Bool {
+    Authorization.isAdmin(accessControlState, caller);
   };
 };

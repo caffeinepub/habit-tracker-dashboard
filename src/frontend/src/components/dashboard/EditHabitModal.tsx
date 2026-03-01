@@ -22,8 +22,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Loader2, Sparkles, Target, Zap } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Loader2, Pencil, Target } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import type { Habit } from "../../backend.d";
+import { useGetHabitNotes, useSetHabitGoal } from "../../hooks/useQueries";
+import { CATEGORY_COLORS, DIFFICULTY_COLORS } from "./AddHabitModal";
 import { EmojiPickerGrid } from "./EmojiPickerGrid";
 
 const COLOR_OPTIONS = [
@@ -48,97 +52,18 @@ const CATEGORIES = [
 
 type Category = (typeof CATEGORIES)[number];
 
-interface Template {
-  name: string;
-  emoji: string;
-  color: string;
-  category: Category;
-  difficulty: string;
-}
-
-const HABIT_TEMPLATES: Template[] = [
-  {
-    name: "Drink Water",
-    emoji: "💧",
-    color: "#00BFFF",
-    category: "Health",
-    difficulty: "easy",
-  },
-  {
-    name: "Exercise",
-    emoji: "🏋️",
-    color: "#32CD32",
-    category: "Health",
-    difficulty: "medium",
-  },
-  {
-    name: "Read",
-    emoji: "📚",
-    color: "#FFD700",
-    category: "Learning",
-    difficulty: "easy",
-  },
-  {
-    name: "Meditate",
-    emoji: "🧘",
-    color: "#8A2BE2",
-    category: "Health",
-    difficulty: "medium",
-  },
-  {
-    name: "Sleep 8hrs",
-    emoji: "😴",
-    color: "#1E90FF",
-    category: "Health",
-    difficulty: "medium",
-  },
-  {
-    name: "Journaling",
-    emoji: "📝",
-    color: "#FF8C00",
-    category: "Personal",
-    difficulty: "easy",
-  },
-  {
-    name: "No Social Media",
-    emoji: "📵",
-    color: "#DC143C",
-    category: "Personal",
-    difficulty: "hard",
-  },
-  {
-    name: "Learn Something New",
-    emoji: "🎓",
-    color: "#4169E1",
-    category: "Learning",
-    difficulty: "medium",
-  },
-  {
-    name: "Budget Review",
-    emoji: "💰",
-    color: "#228B22",
-    category: "Finance",
-    difficulty: "easy",
-  },
-  {
-    name: "Walk 10k Steps",
-    emoji: "👟",
-    color: "#FF6347",
-    category: "Health",
-    difficulty: "medium",
-  },
-];
-
 const DIFFICULTY_OPTIONS = [
   { value: "easy", label: "Easy", color: "#22c55e", pts: 10 },
   { value: "medium", label: "Medium", color: "#eab308", pts: 20 },
   { value: "hard", label: "Hard", color: "#ef4444", pts: 30 },
 ] as const;
 
-interface AddHabitModalProps {
+interface EditHabitModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd: (
+  habit: Habit | null;
+  onEdit: (
+    habitId: bigint,
     name: string,
     emoji: string,
     color: string,
@@ -148,12 +73,13 @@ interface AddHabitModalProps {
   isLoading: boolean;
 }
 
-export function AddHabitModal({
+export function EditHabitModal({
   open,
   onOpenChange,
-  onAdd,
+  habit,
+  onEdit,
   isLoading,
-}: AddHabitModalProps) {
+}: EditHabitModalProps) {
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("⭐");
   const [customEmoji, setCustomEmoji] = useState("");
@@ -164,47 +90,77 @@ export function AddHabitModal({
   const [goalDescription, setGoalDescription] = useState("");
   const [goalTargetCount, setGoalTargetCount] = useState("");
   const [goalDeadline, setGoalDeadline] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+
+  const setHabitGoalMutation = useSetHabitGoal();
+  const { data: habitNotes = [] } = useGetHabitNotes(
+    open && habit ? habit.id : null,
+  );
 
   const activeEmoji = customEmoji || emoji;
 
+  // Populate fields when habit changes
+  useEffect(() => {
+    if (habit) {
+      setName(habit.name);
+      const habitEmoji = habit.emoji || "⭐";
+      setEmoji(habitEmoji);
+      setCustomEmoji("");
+      setSelectedColor(habit.color || COLOR_OPTIONS[0].value);
+      setCategory(habit.category || "Health");
+      setDifficulty(habit.difficulty || "medium");
+      setGoalDescription(habit.goalDescription || "");
+      setGoalTargetCount(
+        habit.goalTargetCount && Number(habit.goalTargetCount) > 0
+          ? habit.goalTargetCount.toString()
+          : "",
+      );
+      setGoalDeadline(habit.goalDeadline || "");
+      if (habit.goalDescription || Number(habit.goalTargetCount) > 0) {
+        setGoalOpen(true);
+      }
+    }
+  }, [habit]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    onAdd(
+    if (!habit || !name.trim()) return;
+    onEdit(
+      habit.id,
       name.trim(),
       activeEmoji || "⭐",
       selectedColor,
       category,
       difficulty,
     );
+    // Also save goal if filled
+    if (
+      habit &&
+      (goalDescription.trim() ||
+        (goalTargetCount && Number(goalTargetCount) > 0))
+    ) {
+      setHabitGoalMutation.mutate(
+        {
+          habitId: habit.id,
+          description: goalDescription.trim(),
+          targetCount: goalTargetCount ? BigInt(goalTargetCount) : 0n,
+          deadline: goalDeadline,
+        },
+        {
+          onSuccess: () => toast.success("Goal saved!"),
+          onError: () => toast.error("Failed to save goal."),
+        },
+      );
+    }
   };
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!isLoading) {
-      if (!newOpen) {
-        setName("");
-        setEmoji("⭐");
-        setCustomEmoji("");
-        setSelectedColor(COLOR_OPTIONS[0].value);
-        setCategory("Health");
-        setDifficulty("medium");
-        setGoalOpen(false);
-        setGoalDescription("");
-        setGoalTargetCount("");
-        setGoalDeadline("");
-      }
       onOpenChange(newOpen);
     }
   };
 
-  const applyTemplate = (template: Template) => {
-    setName(template.name);
-    setEmoji(template.emoji);
-    setCustomEmoji("");
-    setSelectedColor(template.color);
-    setCategory(template.category);
-    setDifficulty(template.difficulty);
-  };
+  if (!habit) return null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -220,52 +176,24 @@ export function AddHabitModal({
             >
               {activeEmoji || "⭐"}
             </div>
-            Add New Habit
+            Edit Habit
           </DialogTitle>
           <DialogDescription className="text-muted-foreground text-sm">
-            Create a new daily habit to track. Consistency is key!
+            Update your habit details. Your streak and history are preserved.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Habit Templates */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Zap size={13} className="text-primary" />
-            <Label className="text-sm font-semibold text-foreground">
-              Quick Start Templates
-            </Label>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {HABIT_TEMPLATES.map((template) => (
-              <button
-                key={template.name}
-                type="button"
-                onClick={() => applyTemplate(template)}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 hover:scale-105",
-                  name === template.name
-                    ? "border-primary/60 bg-primary/15 text-primary"
-                    : "border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                )}
-              >
-                <span>{template.emoji}</span>
-                <span>{template.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-1">
           {/* Habit Name */}
           <div className="space-y-2">
             <Label
-              htmlFor="habit-name"
+              htmlFor="edit-habit-name"
               className="text-sm font-semibold text-foreground"
             >
               Habit Name <span className="text-destructive">*</span>
             </Label>
             <Input
-              id="habit-name"
+              id="edit-habit-name"
               placeholder="e.g. Drink 8 glasses of water"
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, 30))}
@@ -383,7 +311,7 @@ export function AddHabitModal({
             </div>
           </div>
 
-          {/* Optional Goal Section */}
+          {/* Goal Section */}
           <Collapsible open={goalOpen} onOpenChange={setGoalOpen}>
             <CollapsibleTrigger asChild>
               <button
@@ -391,7 +319,9 @@ export function AddHabitModal({
                 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
               >
                 <Target size={14} />
-                Set a Goal (optional)
+                {habit.goalDescription || Number(habit.goalTargetCount) > 0
+                  ? "Edit Goal"
+                  : "Set a Goal (optional)"}
                 <ChevronDown
                   size={14}
                   className={cn(
@@ -442,12 +372,48 @@ export function AddHabitModal({
                     />
                   </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Goal will be saved after adding the habit.
-                </p>
               </div>
             </CollapsibleContent>
           </Collapsible>
+
+          {/* Past Notes Section */}
+          {habitNotes.length > 0 && (
+            <Collapsible open={notesOpen} onOpenChange={setNotesOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
+                >
+                  <span>📝</span>
+                  Past Notes ({habitNotes.length})
+                  <ChevronDown
+                    size={14}
+                    className={cn(
+                      "ml-auto transition-transform duration-200",
+                      notesOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2">
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {[...habitNotes]
+                    .sort((a, b) => b[0].localeCompare(a[0]))
+                    .map(([date, note]) => (
+                      <div
+                        key={date}
+                        className="p-2.5 rounded-lg bg-muted/20 border border-border/40"
+                      >
+                        <p className="text-[10px] text-muted-foreground mb-1">
+                          {date}
+                        </p>
+                        <p className="text-xs text-foreground">{note}</p>
+                      </div>
+                    ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
 
           {/* Preview */}
           <div className="p-3 rounded-xl border border-border/40 bg-background/30 flex items-center gap-3">
@@ -506,12 +472,12 @@ export function AddHabitModal({
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Adding...
+                  Saving...
                 </>
               ) : (
                 <>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Add Habit
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Save Changes
                 </>
               )}
             </Button>
@@ -521,18 +487,3 @@ export function AddHabitModal({
     </Dialog>
   );
 }
-
-export const CATEGORY_COLORS: Record<string, string> = {
-  Health: "#22c55e",
-  Work: "#3b82f6",
-  Personal: "#f59e0b",
-  Finance: "#10b981",
-  Learning: "#8b5cf6",
-  Other: "#6b7280",
-};
-
-export const DIFFICULTY_COLORS: Record<string, string> = {
-  easy: "#22c55e",
-  medium: "#eab308",
-  hard: "#ef4444",
-};

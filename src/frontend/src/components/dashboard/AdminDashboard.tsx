@@ -1,21 +1,48 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Activity,
   BookOpen,
   CheckCircle2,
   Clock,
+  Download,
   Loader2,
   Lock,
   Phone,
   RefreshCw,
+  Search,
   Shield,
+  Target,
+  Trash2,
   Users,
+  Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { useState } from "react";
+import { toast } from "sonner";
 import type { UserAdminDetail } from "../../backend.d";
-import { useGetAdminUserDetails, useIsAdmin } from "../../hooks/useQueries";
+import {
+  useGetAdminUserDetails,
+  useGetWeeklyChallenge,
+  useIsAdmin,
+  useRemoveUser,
+  useSetWeeklyChallenge,
+} from "../../hooks/useQueries";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -38,6 +65,16 @@ function timeAgo(ns: bigint): string {
     return `${Math.floor(months / 12)}y ago`;
   } catch {
     return "—";
+  }
+}
+
+function formatDate(ns: bigint): string {
+  if (!ns) return "N/A";
+  try {
+    const ms = Number(ns / 1_000_000n);
+    return new Date(ms).toLocaleDateString();
+  } catch {
+    return "N/A";
   }
 }
 
@@ -74,14 +111,59 @@ function principalToHue(principal: string): number {
   return Math.abs(hash) % 360;
 }
 
+// ─── CSV Export ────────────────────────────────────────────────────────────
+
+function exportUsersCSV(users: UserAdminDetail[]) {
+  const headers = [
+    "Name",
+    "Principal ID",
+    "Mobile",
+    "First Login",
+    "Last Login",
+    "Habit Count",
+    "Habits",
+    "Completions Today",
+    "Weekly Rate (%)",
+  ];
+  const rows = users.map((u) => [
+    u.displayName || "Anonymous",
+    u.principal,
+    u.mobile || "",
+    formatDate(u.firstLogin),
+    formatDate(u.lastLogin),
+    u.habits.length.toString(),
+    u.habits.map((h) => `${h.emoji} ${h.name}`).join("; "),
+    u.completionsToday.toString(),
+    u.weeklyCompletionRate.toString(),
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `habitflow-users-${new Date().toISOString().split("T")[0]}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // ─── User Card ─────────────────────────────────────────────────────────────
 
 function UserCard({
   user,
   index,
+  onRemove,
+  isRemoving,
 }: {
   user: UserAdminDetail;
   index: number;
+  onRemove: (principal: string) => void;
+  isRemoving: boolean;
 }) {
   const active = isRecentlyActive(user.lastLogin);
   const displayName = user.displayName?.trim() ? user.displayName : null;
@@ -114,7 +196,7 @@ function UserCard({
 
         {/* Name + principal + mobile */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <p className="font-semibold text-foreground truncate text-sm">
               {displayName ?? "Anonymous User"}
             </p>
@@ -143,6 +225,44 @@ function UserCard({
             </div>
           )}
         </div>
+
+        {/* Remove user button */}
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              type="button"
+              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              title={`Remove ${displayName ?? "user"}`}
+              disabled={isRemoving}
+            >
+              {isRemoving ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove User</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to remove{" "}
+                <strong>{displayName ?? "this user"}</strong>? This will delete
+                all their data including habits, completions, and profile. This
+                action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => onRemove(user.principal)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Remove User
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {/* Stats row */}
@@ -204,7 +324,6 @@ function UserCard({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {visibleHabits.map((habit) => {
-              // Build a tint from the habit's color (hex → hue extraction fallback)
               const bg = habit.color
                 ? `${habit.color}22`
                 : "hsl(var(--muted)/0.3)";
@@ -268,6 +387,131 @@ function StatCard({
   );
 }
 
+// ─── Weekly Challenge Form ──────────────────────────────────────────────────
+
+function WeeklyChallengeForm() {
+  const { data: existing } = useGetWeeklyChallenge();
+  const setChallengeMutation = useSetWeeklyChallenge();
+  const [title, setTitle] = useState(existing?.title ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [targetPerDay, setTargetPerDay] = useState(
+    existing ? Number(existing.targetCompletionsPerDay).toString() : "3",
+  );
+  const [deadline, setDeadline] = useState(existing?.deadline ?? "");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setChallengeMutation.mutate(
+      {
+        title: title.trim(),
+        description: description.trim(),
+        targetCompletionsPerDay: BigInt(targetPerDay || "1"),
+        deadline,
+      },
+      {
+        onSuccess: () => toast.success("Weekly challenge set!"),
+        onError: () => toast.error("Failed to set challenge."),
+      },
+    );
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.25 }}
+      className="card-surface rounded-2xl p-5"
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <Zap size={16} className="text-primary" />
+        <h3 className="text-sm font-bold text-foreground">
+          Set Weekly Challenge
+        </h3>
+        {existing && (
+          <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-success/15 text-success border border-success/25">
+            Active
+          </span>
+        )}
+      </div>
+      {existing && (
+        <div className="mb-4 p-3 rounded-xl bg-muted/20 border border-border/40">
+          <p className="text-xs font-semibold text-foreground">
+            Current: {existing.title}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {existing.description}
+          </p>
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">
+            Title *
+          </Label>
+          <Input
+            placeholder="e.g. 7-Day Consistency Sprint"
+            value={title}
+            onChange={(e) => setTitle(e.target.value.slice(0, 60))}
+            className="bg-background/50 border-border/60 text-sm"
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">
+            Description
+          </Label>
+          <Textarea
+            placeholder="Describe the challenge..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value.slice(0, 120))}
+            className="bg-background/50 border-border/60 text-sm resize-none min-h-[60px]"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <Target size={11} />
+              Habits/day goal
+            </Label>
+            <Input
+              type="number"
+              min={1}
+              value={targetPerDay}
+              onChange={(e) => setTargetPerDay(e.target.value)}
+              className="bg-background/50 border-border/60 text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
+              Deadline
+            </Label>
+            <Input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="bg-background/50 border-border/60 text-sm"
+            />
+          </div>
+        </div>
+        <Button
+          type="submit"
+          disabled={!title.trim() || setChallengeMutation.isPending}
+          size="sm"
+          className="w-full"
+        >
+          {setChallengeMutation.isPending ? (
+            <Loader2 size={13} className="mr-1.5 animate-spin" />
+          ) : (
+            <Zap size={13} className="mr-1.5" />
+          )}
+          {existing ? "Update Challenge" : "Set Challenge"}
+        </Button>
+      </form>
+    </motion.div>
+  );
+}
+
 // ─── AdminDashboard ─────────────────────────────────────────────────────────
 
 interface AdminDashboardProps {
@@ -278,7 +522,12 @@ export function AdminDashboard({
   isAdmin: isAdminProp,
 }: AdminDashboardProps = {}) {
   const { data: isAdminFromQuery, isLoading: adminLoading } = useIsAdmin();
-  const isAdmin = isAdminProp !== undefined ? isAdminProp : isAdminFromQuery;
+  const isAdmin =
+    isAdminProp === true
+      ? true
+      : isAdminProp !== undefined
+        ? isAdminProp
+        : isAdminFromQuery;
 
   const {
     data: users = [],
@@ -286,6 +535,38 @@ export function AdminDashboard({
     refetch,
     isFetching,
   } = useGetAdminUserDetails(isAdmin === true);
+
+  const removeUserMutation = useRemoveUser();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [removingPrincipal, setRemovingPrincipal] = useState<string | null>(
+    null,
+  );
+
+  const handleRemoveUser = (principal: string) => {
+    setRemovingPrincipal(principal);
+    removeUserMutation.mutate(
+      { principal },
+      {
+        onSuccess: () => {
+          toast.success("User removed successfully");
+          setRemovingPrincipal(null);
+        },
+        onError: () => {
+          toast.error("Failed to remove user. Please try again.");
+          setRemovingPrincipal(null);
+        },
+      },
+    );
+  };
+
+  const filteredUsers = searchQuery.trim()
+    ? users.filter(
+        (u) =>
+          u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          u.principal.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          u.mobile.includes(searchQuery),
+      )
+    : users;
 
   if (adminLoading && isAdminProp === undefined) {
     return (
@@ -332,7 +613,7 @@ export function AdminDashboard({
             Admin
           </span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h2 className="text-xl font-bold text-foreground">
               User Dashboard
@@ -341,20 +622,32 @@ export function AdminDashboard({
               Monitor all platform users and their habits at a glance
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 border-border/50 hover:border-primary/40"
-          >
-            {isFetching ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <RefreshCw size={14} />
-            )}
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportUsersCSV(users)}
+              disabled={users.length === 0}
+              className="flex items-center gap-2 border-border/50 hover:border-primary/40"
+            >
+              <Download size={14} />
+              Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="flex items-center gap-2 border-border/50 hover:border-primary/40"
+            >
+              {isFetching ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+              Refresh
+            </Button>
+          </div>
         </div>
       </motion.div>
 
@@ -385,6 +678,36 @@ export function AdminDashboard({
         />
       </motion.div>
 
+      {/* Search */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.15 }}
+        className="relative"
+      >
+        <Search
+          size={16}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          placeholder="Search by name, principal ID, or mobile..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9 bg-background/50 border-border/60"
+        />
+        {searchQuery && (
+          <Badge
+            variant="secondary"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+          >
+            {filteredUsers.length} result{filteredUsers.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
+      </motion.div>
+
+      {/* Weekly Challenge form */}
+      <WeeklyChallengeForm />
+
       {/* User cards grid */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -395,22 +718,30 @@ export function AdminDashboard({
           <div className="card-surface rounded-2xl flex items-center justify-center py-20">
             <Loader2 size={28} className="animate-spin text-primary" />
           </div>
-        ) : users.length === 0 ? (
+        ) : filteredUsers.length === 0 ? (
           <div className="card-surface rounded-2xl flex flex-col items-center justify-center py-20 text-center px-6">
             <div className="w-12 h-12 rounded-xl bg-muted/40 flex items-center justify-center mb-3">
               <Users size={22} className="text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground mb-1">
-              No users yet
+              {searchQuery ? "No matching users" : "No users yet"}
             </p>
             <p className="text-xs text-muted-foreground">
-              Users will appear here once they log in.
+              {searchQuery
+                ? "Try a different search term"
+                : "Users will appear here once they log in."}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {users.map((user, idx) => (
-              <UserCard key={user.principal} user={user} index={idx} />
+            {filteredUsers.map((user, idx) => (
+              <UserCard
+                key={user.principal}
+                user={user}
+                index={idx}
+                onRemove={handleRemoveUser}
+                isRemoving={removingPrincipal === user.principal}
+              />
             ))}
           </div>
         )}

@@ -14,6 +14,13 @@ export const UserRole = IDL.Variant({
   'guest' : IDL.Null,
 });
 export const HabitId = IDL.Nat;
+export const Achievement = IDL.Record({
+  'id' : IDL.Text,
+  'name' : IDL.Text,
+  'description' : IDL.Text,
+  'earnedAt' : IDL.Int,
+  'earned' : IDL.Bool,
+});
 export const UserActivity = IDL.Record({
   'principal' : IDL.Text,
   'habitCount' : IDL.Nat,
@@ -22,10 +29,16 @@ export const UserActivity = IDL.Record({
 });
 export const Habit = IDL.Record({
   'id' : HabitId,
+  'goalTargetCount' : IDL.Nat,
+  'difficulty' : IDL.Text,
   'name' : IDL.Text,
   'color' : IDL.Text,
+  'goalDeadline' : IDL.Text,
   'emoji' : IDL.Text,
   'reminderTime' : IDL.Text,
+  'category' : IDL.Text,
+  'customReminderMsg' : IDL.Text,
+  'goalDescription' : IDL.Text,
 });
 export const UserAdminDetail = IDL.Record({
   'principal' : IDL.Text,
@@ -38,19 +51,52 @@ export const UserAdminDetail = IDL.Record({
   'weeklyCompletionRate' : IDL.Nat,
 });
 export const UserProfile = IDL.Record({
+  'habitOrder' : IDL.Vec(IDL.Nat),
   'name' : IDL.Text,
+  'accentColor' : IDL.Text,
+  'avatarBase64' : IDL.Text,
+  'streakTokens' : IDL.Nat,
   'mobile' : IDL.Text,
+  'points' : IDL.Nat,
+});
+export const DetailedStats = IDL.Record({
+  'totalDaysTracked' : IDL.Nat,
+  'totalCompletions' : IDL.Nat,
+  'currentStreakDays' : IDL.Nat,
+  'habitsCompletedToday' : IDL.Nat,
+  'bestStreakEver' : IDL.Nat,
+  'averageCompletionRate' : IDL.Nat,
+});
+export const LeaderboardEntry = IDL.Record({
+  'principal' : IDL.Text,
+  'displayName' : IDL.Text,
+  'points' : IDL.Nat,
 });
 export const StreakData = IDL.Record({
   'bestStreak' : IDL.Nat,
   'currentStreak' : IDL.Nat,
 });
+export const WeeklyChallenge = IDL.Record({
+  'title' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'description' : IDL.Text,
+  'deadline' : IDL.Text,
+  'setBy' : IDL.Text,
+  'targetCompletionsPerDay' : IDL.Nat,
+});
 
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-  'addHabit' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
+  'addHabit' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [],
+      [],
+    ),
+  'addPoints' : IDL.Func([IDL.Nat], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'deleteHabit' : IDL.Func([HabitId], [], []),
+  'followUser' : IDL.Func([IDL.Principal], [], []),
+  'getAchievements' : IDL.Func([], [IDL.Vec(Achievement)], ['query']),
   'getAdminStats' : IDL.Func([], [IDL.Vec(UserActivity)], ['query']),
   'getAdminUserDetails' : IDL.Func(
       [IDL.Text],
@@ -60,9 +106,24 @@ export const idlService = IDL.Service({
   'getAllHabits' : IDL.Func([], [IDL.Vec(Habit)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getChallengeMembersCount' : IDL.Func([], [IDL.Nat], ['query']),
   'getCompletionsForRange' : IDL.Func(
       [IDL.Text, IDL.Text],
       [IDL.Vec(IDL.Tuple(Habit, IDL.Vec(IDL.Text)))],
+      ['query'],
+    ),
+  'getDetailedStats' : IDL.Func([IDL.Text], [DetailedStats], ['query']),
+  'getFollowing' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
+  'getFriendLeaderboard' : IDL.Func([], [IDL.Vec(LeaderboardEntry)], ['query']),
+  'getHabitNotes' : IDL.Func(
+      [HabitId],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
+      ['query'],
+    ),
+  'getLeaderboard' : IDL.Func([], [IDL.Vec(LeaderboardEntry)], ['query']),
+  'getMoods' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
       ['query'],
     ),
   'getStreakData' : IDL.Func(
@@ -75,14 +136,33 @@ export const idlService = IDL.Service({
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
+  'getWeeklyChallenge' : IDL.Func([], [IDL.Opt(WeeklyChallenge)], ['query']),
   'initializePredefinedHabits' : IDL.Func([], [], []),
   'isAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'joinWeeklyChallenge' : IDL.Func([], [], []),
   'recordLogin' : IDL.Func([], [], []),
+  'removeUser' : IDL.Func([IDL.Principal], [], []),
+  'reorderHabits' : IDL.Func([IDL.Vec(HabitId)], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'saveHabitNote' : IDL.Func([HabitId, IDL.Text, IDL.Text], [], []),
+  'saveMood' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'setAdminPrincipal' : IDL.Func([IDL.Principal], [], []),
-  'setHabitReminderTime' : IDL.Func([HabitId, IDL.Text], [], []),
+  'setHabitGoal' : IDL.Func([HabitId, IDL.Text, IDL.Nat, IDL.Text], [], []),
+  'setHabitReminderTime' : IDL.Func([HabitId, IDL.Text, IDL.Text], [], []),
+  'setWeeklyChallenge' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Nat, IDL.Text],
+      [],
+      [],
+    ),
+  'spendStreakToken' : IDL.Func([HabitId, IDL.Text], [], []),
   'toggleCompletion' : IDL.Func([HabitId, IDL.Text], [], []),
+  'unfollowUser' : IDL.Func([IDL.Principal], [], []),
+  'updateHabit' : IDL.Func(
+      [HabitId, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [],
+      [],
+    ),
 });
 
 export const idlInitArgs = [];
@@ -94,6 +174,13 @@ export const idlFactory = ({ IDL }) => {
     'guest' : IDL.Null,
   });
   const HabitId = IDL.Nat;
+  const Achievement = IDL.Record({
+    'id' : IDL.Text,
+    'name' : IDL.Text,
+    'description' : IDL.Text,
+    'earnedAt' : IDL.Int,
+    'earned' : IDL.Bool,
+  });
   const UserActivity = IDL.Record({
     'principal' : IDL.Text,
     'habitCount' : IDL.Nat,
@@ -102,10 +189,16 @@ export const idlFactory = ({ IDL }) => {
   });
   const Habit = IDL.Record({
     'id' : HabitId,
+    'goalTargetCount' : IDL.Nat,
+    'difficulty' : IDL.Text,
     'name' : IDL.Text,
     'color' : IDL.Text,
+    'goalDeadline' : IDL.Text,
     'emoji' : IDL.Text,
     'reminderTime' : IDL.Text,
+    'category' : IDL.Text,
+    'customReminderMsg' : IDL.Text,
+    'goalDescription' : IDL.Text,
   });
   const UserAdminDetail = IDL.Record({
     'principal' : IDL.Text,
@@ -117,17 +210,53 @@ export const idlFactory = ({ IDL }) => {
     'lastLogin' : IDL.Int,
     'weeklyCompletionRate' : IDL.Nat,
   });
-  const UserProfile = IDL.Record({ 'name' : IDL.Text, 'mobile' : IDL.Text });
+  const UserProfile = IDL.Record({
+    'habitOrder' : IDL.Vec(IDL.Nat),
+    'name' : IDL.Text,
+    'accentColor' : IDL.Text,
+    'avatarBase64' : IDL.Text,
+    'streakTokens' : IDL.Nat,
+    'mobile' : IDL.Text,
+    'points' : IDL.Nat,
+  });
+  const DetailedStats = IDL.Record({
+    'totalDaysTracked' : IDL.Nat,
+    'totalCompletions' : IDL.Nat,
+    'currentStreakDays' : IDL.Nat,
+    'habitsCompletedToday' : IDL.Nat,
+    'bestStreakEver' : IDL.Nat,
+    'averageCompletionRate' : IDL.Nat,
+  });
+  const LeaderboardEntry = IDL.Record({
+    'principal' : IDL.Text,
+    'displayName' : IDL.Text,
+    'points' : IDL.Nat,
+  });
   const StreakData = IDL.Record({
     'bestStreak' : IDL.Nat,
     'currentStreak' : IDL.Nat,
   });
+  const WeeklyChallenge = IDL.Record({
+    'title' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'description' : IDL.Text,
+    'deadline' : IDL.Text,
+    'setBy' : IDL.Text,
+    'targetCompletionsPerDay' : IDL.Nat,
+  });
   
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-    'addHabit' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
+    'addHabit' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [],
+        [],
+      ),
+    'addPoints' : IDL.Func([IDL.Nat], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'deleteHabit' : IDL.Func([HabitId], [], []),
+    'followUser' : IDL.Func([IDL.Principal], [], []),
+    'getAchievements' : IDL.Func([], [IDL.Vec(Achievement)], ['query']),
     'getAdminStats' : IDL.Func([], [IDL.Vec(UserActivity)], ['query']),
     'getAdminUserDetails' : IDL.Func(
         [IDL.Text],
@@ -137,9 +266,28 @@ export const idlFactory = ({ IDL }) => {
     'getAllHabits' : IDL.Func([], [IDL.Vec(Habit)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getChallengeMembersCount' : IDL.Func([], [IDL.Nat], ['query']),
     'getCompletionsForRange' : IDL.Func(
         [IDL.Text, IDL.Text],
         [IDL.Vec(IDL.Tuple(Habit, IDL.Vec(IDL.Text)))],
+        ['query'],
+      ),
+    'getDetailedStats' : IDL.Func([IDL.Text], [DetailedStats], ['query']),
+    'getFollowing' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
+    'getFriendLeaderboard' : IDL.Func(
+        [],
+        [IDL.Vec(LeaderboardEntry)],
+        ['query'],
+      ),
+    'getHabitNotes' : IDL.Func(
+        [HabitId],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
+        ['query'],
+      ),
+    'getLeaderboard' : IDL.Func([], [IDL.Vec(LeaderboardEntry)], ['query']),
+    'getMoods' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
         ['query'],
       ),
     'getStreakData' : IDL.Func(
@@ -152,14 +300,33 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
+    'getWeeklyChallenge' : IDL.Func([], [IDL.Opt(WeeklyChallenge)], ['query']),
     'initializePredefinedHabits' : IDL.Func([], [], []),
     'isAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'joinWeeklyChallenge' : IDL.Func([], [], []),
     'recordLogin' : IDL.Func([], [], []),
+    'removeUser' : IDL.Func([IDL.Principal], [], []),
+    'reorderHabits' : IDL.Func([IDL.Vec(HabitId)], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'saveHabitNote' : IDL.Func([HabitId, IDL.Text, IDL.Text], [], []),
+    'saveMood' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'setAdminPrincipal' : IDL.Func([IDL.Principal], [], []),
-    'setHabitReminderTime' : IDL.Func([HabitId, IDL.Text], [], []),
+    'setHabitGoal' : IDL.Func([HabitId, IDL.Text, IDL.Nat, IDL.Text], [], []),
+    'setHabitReminderTime' : IDL.Func([HabitId, IDL.Text, IDL.Text], [], []),
+    'setWeeklyChallenge' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Nat, IDL.Text],
+        [],
+        [],
+      ),
+    'spendStreakToken' : IDL.Func([HabitId, IDL.Text], [], []),
     'toggleCompletion' : IDL.Func([HabitId, IDL.Text], [], []),
+    'unfollowUser' : IDL.Func([IDL.Principal], [], []),
+    'updateHabit' : IDL.Func(
+        [HabitId, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [],
+        [],
+      ),
   });
 };
 

@@ -1,6 +1,8 @@
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  BarChart2,
   BarChart3,
   Check,
   ChevronRight,
@@ -11,6 +13,7 @@ import {
   LogOut,
   Settings,
   Shield,
+  Trophy,
   User,
   X,
   Zap,
@@ -28,6 +31,9 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard", id: "dashboard" },
   { icon: <ListChecks size={18} />, label: "Habits", id: "habits" },
   { icon: <BarChart3 size={18} />, label: "Analytics", id: "analytics" },
+  { icon: <Trophy size={18} />, label: "Achievements", id: "achievements" },
+  { icon: <BarChart2 size={18} />, label: "Stats", id: "stats" },
+  { icon: <Trophy size={18} />, label: "Leaderboard", id: "leaderboard" },
   { icon: <Settings size={18} />, label: "Settings", id: "settings" },
 ];
 
@@ -42,8 +48,17 @@ interface SidebarProps {
   isAdmin?: boolean;
   userName?: string;
   userPrincipal?: string;
+  userPoints?: number;
+  avatarBase64?: string;
   onLogout?: () => void;
   onAdminTokenSubmit?: (token: string) => void;
+}
+
+function getLevelInfo(points: number): { label: string; color: string } {
+  if (points >= 5000) return { label: "Master", color: "#f59e0b" };
+  if (points >= 2000) return { label: "Expert", color: "#8b5cf6" };
+  if (points >= 500) return { label: "Intermediate", color: "#3b82f6" };
+  return { label: "Beginner", color: "#6b7280" };
 }
 
 export function Sidebar({
@@ -54,6 +69,8 @@ export function Sidebar({
   isAdmin,
   userName,
   userPrincipal,
+  userPoints,
+  avatarBase64,
   onLogout,
   onAdminTokenSubmit,
 }: SidebarProps) {
@@ -271,8 +288,21 @@ export function Sidebar({
       {/* Bottom user */}
       <div className="px-3 pb-6 border-t border-sidebar-border pt-4 space-y-1">
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-sidebar-accent/50">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-5 flex items-center justify-center shrink-0">
-            {userName ? (
+          <div
+            className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-border/30"
+            style={{
+              background: avatarBase64
+                ? "transparent"
+                : "linear-gradient(135deg, oklch(0.62 0.22 290), oklch(0.68 0.18 330))",
+            }}
+          >
+            {avatarBase64 ? (
+              <img
+                src={avatarBase64}
+                alt="Avatar"
+                className="w-full h-full object-cover"
+              />
+            ) : userName ? (
               <span className="text-xs font-bold text-white">
                 {userName.charAt(0).toUpperCase()}
               </span>
@@ -281,9 +311,22 @@ export function Sidebar({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">
-              {displayName}
-            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-sm font-medium text-sidebar-foreground truncate">
+                {displayName}
+              </p>
+              {userPoints !== undefined && (
+                <span
+                  className="text-[9px] font-bold px-1 py-0.5 rounded-full shrink-0"
+                  style={{
+                    backgroundColor: `${getLevelInfo(userPoints).color}20`,
+                    color: getLevelInfo(userPoints).color,
+                  }}
+                >
+                  {getLevelInfo(userPoints).label}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">HabitFlow Member</p>
           </div>
         </div>
@@ -322,6 +365,14 @@ export function Sidebar({
             </div>
           </div>
         )}
+        {/* Theme toggle */}
+        <div className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-sidebar-accent/50 transition-colors">
+          <span className="text-sm font-medium text-muted-foreground">
+            Theme
+          </span>
+          <ThemeToggle />
+        </div>
+
         {onLogout && (
           <button
             type="button"

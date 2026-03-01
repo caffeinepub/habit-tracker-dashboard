@@ -10,14 +10,40 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface Achievement {
+  'id' : string,
+  'name' : string,
+  'description' : string,
+  'earnedAt' : bigint,
+  'earned' : boolean,
+}
+export interface DetailedStats {
+  'totalDaysTracked' : bigint,
+  'totalCompletions' : bigint,
+  'currentStreakDays' : bigint,
+  'habitsCompletedToday' : bigint,
+  'bestStreakEver' : bigint,
+  'averageCompletionRate' : bigint,
+}
 export interface Habit {
   'id' : HabitId,
+  'goalTargetCount' : bigint,
+  'difficulty' : string,
   'name' : string,
   'color' : string,
+  'goalDeadline' : string,
   'emoji' : string,
   'reminderTime' : string,
+  'category' : string,
+  'customReminderMsg' : string,
+  'goalDescription' : string,
 }
 export type HabitId = bigint;
+export interface LeaderboardEntry {
+  'principal' : string,
+  'displayName' : string,
+  'points' : bigint,
+}
 export interface StreakData { 'bestStreak' : bigint, 'currentStreak' : bigint }
 export interface UserActivity {
   'principal' : string,
@@ -35,34 +61,77 @@ export interface UserAdminDetail {
   'lastLogin' : bigint,
   'weeklyCompletionRate' : bigint,
 }
-export interface UserProfile { 'name' : string, 'mobile' : string }
+export interface UserProfile {
+  'habitOrder' : Array<bigint>,
+  'name' : string,
+  'accentColor' : string,
+  'avatarBase64' : string,
+  'streakTokens' : bigint,
+  'mobile' : string,
+  'points' : bigint,
+}
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface WeeklyChallenge {
+  'title' : string,
+  'createdAt' : bigint,
+  'description' : string,
+  'deadline' : string,
+  'setBy' : string,
+  'targetCompletionsPerDay' : bigint,
+}
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
-  'addHabit' : ActorMethod<[string, string, string], undefined>,
+  'addHabit' : ActorMethod<[string, string, string, string, string], undefined>,
+  'addPoints' : ActorMethod<[bigint], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'deleteHabit' : ActorMethod<[HabitId], undefined>,
+  'followUser' : ActorMethod<[Principal], undefined>,
+  'getAchievements' : ActorMethod<[], Array<Achievement>>,
   'getAdminStats' : ActorMethod<[], Array<UserActivity>>,
   'getAdminUserDetails' : ActorMethod<[string], Array<UserAdminDetail>>,
   'getAllHabits' : ActorMethod<[], Array<Habit>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getChallengeMembersCount' : ActorMethod<[], bigint>,
   'getCompletionsForRange' : ActorMethod<
     [string, string],
     Array<[Habit, Array<string>]>
   >,
+  'getDetailedStats' : ActorMethod<[string], DetailedStats>,
+  'getFollowing' : ActorMethod<[], Array<string>>,
+  'getFriendLeaderboard' : ActorMethod<[], Array<LeaderboardEntry>>,
+  'getHabitNotes' : ActorMethod<[HabitId], Array<[string, string]>>,
+  'getLeaderboard' : ActorMethod<[], Array<LeaderboardEntry>>,
+  'getMoods' : ActorMethod<[], Array<[string, string]>>,
   'getStreakData' : ActorMethod<[], Array<[Habit, StreakData]>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'getWeeklyChallenge' : ActorMethod<[], [] | [WeeklyChallenge]>,
   'initializePredefinedHabits' : ActorMethod<[], undefined>,
   'isAdmin' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'joinWeeklyChallenge' : ActorMethod<[], undefined>,
   'recordLogin' : ActorMethod<[], undefined>,
+  'removeUser' : ActorMethod<[Principal], undefined>,
+  'reorderHabits' : ActorMethod<[Array<HabitId>], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'saveHabitNote' : ActorMethod<[HabitId, string, string], undefined>,
+  'saveMood' : ActorMethod<[string, string], undefined>,
   'setAdminPrincipal' : ActorMethod<[Principal], undefined>,
-  'setHabitReminderTime' : ActorMethod<[HabitId, string], undefined>,
+  'setHabitGoal' : ActorMethod<[HabitId, string, bigint, string], undefined>,
+  'setHabitReminderTime' : ActorMethod<[HabitId, string, string], undefined>,
+  'setWeeklyChallenge' : ActorMethod<
+    [string, string, bigint, string],
+    undefined
+  >,
+  'spendStreakToken' : ActorMethod<[HabitId, string], undefined>,
   'toggleCompletion' : ActorMethod<[HabitId, string], undefined>,
+  'unfollowUser' : ActorMethod<[Principal], undefined>,
+  'updateHabit' : ActorMethod<
+    [HabitId, string, string, string, string, string],
+    undefined
+  >,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

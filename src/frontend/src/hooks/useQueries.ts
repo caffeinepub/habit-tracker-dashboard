@@ -1,11 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import type {
+  Achievement,
+  DetailedStats,
   Habit,
+  LeaderboardEntry,
   StreakData,
   UserActivity,
   UserAdminDetail,
   UserProfile,
+  WeeklyChallenge,
 } from "../backend.d";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
@@ -99,7 +103,7 @@ export function useToggleCompletion() {
       habitId,
       date,
     }: { habitId: bigint; date: string }) => {
-      if (!actor) return;
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
       await actor.toggleCompletion(habitId, date);
     },
     onSuccess: () => {
@@ -118,14 +122,58 @@ export function useAddHabit() {
       name,
       emoji,
       color,
-    }: { name: string; emoji: string; color: string }) => {
-      if (!actor) return;
-      await actor.addHabit(name, emoji, color);
+      category,
+      difficulty = "medium",
+    }: {
+      name: string;
+      emoji: string;
+      color: string;
+      category: string;
+      difficulty?: string;
+    }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.addHabit(name, emoji, color, category, difficulty);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
       queryClient.invalidateQueries({ queryKey: ["completions"] });
       queryClient.invalidateQueries({ queryKey: ["streaks"] });
+    },
+  });
+}
+
+export function useUpdateHabit() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      habitId,
+      name,
+      emoji,
+      color,
+      category,
+      difficulty = "medium",
+    }: {
+      habitId: bigint;
+      name: string;
+      emoji: string;
+      color: string;
+      category: string;
+      difficulty?: string;
+    }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.updateHabit(
+        habitId,
+        name,
+        emoji,
+        color,
+        category,
+        difficulty,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
   });
 }
@@ -202,10 +250,11 @@ export function useGetAdminStats() {
 export function useGetAdminUserDetails(isAdminOverride?: boolean) {
   const { actor, isFetching } = useActor();
   const { data: isAdminFromQuery } = useIsAdmin();
+  // If override is explicitly true, bypass the query result and treat as admin
   const isAdmin = isAdminOverride === true || !!isAdminFromQuery;
   const today = format(new Date(), "yyyy-MM-dd");
   return useQuery<UserAdminDetail[]>({
-    queryKey: ["adminUserDetails", today],
+    queryKey: ["adminUserDetails", today, isAdminOverride],
     queryFn: async () => {
       if (!actor) return [];
       try {
@@ -214,9 +263,10 @@ export function useGetAdminUserDetails(isAdminOverride?: boolean) {
         return [];
       }
     },
+    // When isAdminOverride is explicitly true, don't block on isFetching from the isAdmin query
     enabled: !!actor && !isFetching && isAdmin,
     staleTime: 0,
-    refetchInterval: 20_000,
+    refetchInterval: isAdmin ? 20_000 : false,
     refetchIntervalInBackground: false,
   });
 }
@@ -264,15 +314,370 @@ export function useSetHabitReminderTime() {
     mutationFn: async ({
       habitId,
       reminderTime,
+      customMsg = "",
     }: {
       habitId: bigint;
       reminderTime: string;
+      customMsg?: string;
     }) => {
-      if (!actor) return;
-      await actor.setHabitReminderTime(habitId, reminderTime);
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.setHabitReminderTime(habitId, reminderTime, customMsg);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
+  });
+}
+
+export function useSaveHabitNote() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async ({
+      habitId,
+      date,
+      note,
+    }: { habitId: bigint; date: string; note: string }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.saveHabitNote(habitId, date, note);
+    },
+  });
+}
+
+export function useGetHabitNotes(habitId: bigint | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<Array<[string, string]>>({
+    queryKey: ["habitNotes", habitId?.toString()],
+    queryFn: async () => {
+      if (!actor || !habitId) return [];
+      try {
+        return await actor.getHabitNotes(habitId);
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && !!habitId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSaveMood() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ date, mood }: { date: string; mood: string }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.saveMood(date, mood);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["moods"] });
+    },
+  });
+}
+
+export function useGetMoods() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Array<[string, string]>>({
+    queryKey: ["moods"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getMoods();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 30_000,
+  });
+}
+
+export function useSetHabitGoal() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      habitId,
+      description,
+      targetCount,
+      deadline,
+    }: {
+      habitId: bigint;
+      description: string;
+      targetCount: bigint;
+      deadline: string;
+    }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.setHabitGoal(habitId, description, targetCount, deadline);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["habits"] });
+    },
+  });
+}
+
+export function useGetWeeklyChallenge() {
+  const { actor, isFetching } = useActor();
+  return useQuery<WeeklyChallenge | null>({
+    queryKey: ["weeklyChallenge"],
+    queryFn: async () => {
+      if (!actor) return null;
+      try {
+        return await actor.getWeeklyChallenge();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+}
+
+export function useSetWeeklyChallenge() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      title,
+      description,
+      targetCompletionsPerDay,
+      deadline,
+    }: {
+      title: string;
+      description: string;
+      targetCompletionsPerDay: bigint;
+      deadline: string;
+    }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.setWeeklyChallenge(
+        title,
+        description,
+        targetCompletionsPerDay,
+        deadline,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["weeklyChallenge"] });
+    },
+  });
+}
+
+export function useJoinWeeklyChallenge() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.joinWeeklyChallenge();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["weeklyChallenge"] });
+    },
+  });
+}
+
+export function useGetChallengeMembersCount() {
+  const { actor, isFetching } = useActor();
+  return useQuery<bigint>({
+    queryKey: ["challengeMembers"],
+    queryFn: async () => {
+      if (!actor) return 0n;
+      try {
+        return await actor.getChallengeMembersCount();
+      } catch {
+        return 0n;
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 60_000,
+  });
+}
+
+export function useFollowUser() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ principalStr }: { principalStr: string }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      const { Principal } = await import("@icp-sdk/core/principal");
+      await actor.followUser(Principal.fromText(principalStr));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["following"] });
+      queryClient.invalidateQueries({ queryKey: ["friendLeaderboard"] });
+    },
+  });
+}
+
+export function useUnfollowUser() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ principalStr }: { principalStr: string }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      const { Principal } = await import("@icp-sdk/core/principal");
+      await actor.unfollowUser(Principal.fromText(principalStr));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["following"] });
+      queryClient.invalidateQueries({ queryKey: ["friendLeaderboard"] });
+    },
+  });
+}
+
+export function useGetFollowing() {
+  const { actor, isFetching } = useActor();
+  return useQuery<string[]>({
+    queryKey: ["following"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getFollowing();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 30_000,
+  });
+}
+
+export function useGetFriendLeaderboard() {
+  const { actor, isFetching } = useActor();
+  return useQuery<LeaderboardEntry[]>({
+    queryKey: ["friendLeaderboard"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getFriendLeaderboard();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useGetAchievements() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Achievement[]>({
+    queryKey: ["achievements"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getAchievements();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useGetDetailedStats(todayDate: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<DetailedStats | null>({
+    queryKey: ["detailedStats", todayDate],
+    queryFn: async () => {
+      if (!actor) return null;
+      try {
+        return await actor.getDetailedStats(todayDate);
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useRemoveUser() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ principal }: { principal: string }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      // Import Principal from the icp-sdk
+      const { Principal } = await import("@icp-sdk/core/principal");
+      await actor.removeUser(Principal.fromText(principal));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminUserDetails"] });
+      queryClient.invalidateQueries({ queryKey: ["adminStats"] });
+    },
+  });
+}
+
+export function useAddPoints() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ pts }: { pts: bigint }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.addPoints(pts);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentUserProfile"] });
+      queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+    },
+  });
+}
+
+export function useReorderHabits() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ order }: { order: bigint[] }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.reorderHabits(order);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentUserProfile"] });
+    },
+  });
+}
+
+export function useSpendStreakToken() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      habitId,
+      missedDate,
+    }: { habitId: bigint; missedDate: string }) => {
+      if (!actor) throw new Error("Not connected. Please wait and try again.");
+      await actor.spendStreakToken(habitId, missedDate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentUserProfile"] });
+      queryClient.invalidateQueries({ queryKey: ["streaks"] });
+      queryClient.invalidateQueries({ queryKey: ["completions"] });
+    },
+  });
+}
+
+export function useGetLeaderboard() {
+  const { actor, isFetching } = useActor();
+  return useQuery({
+    queryKey: ["leaderboard"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getLeaderboard();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }

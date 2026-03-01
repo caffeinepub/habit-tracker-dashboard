@@ -1,4 +1,11 @@
-import { BarChart2, Flame, ListChecks, TrendingUp } from "lucide-react";
+import {
+  BarChart2,
+  Flame,
+  ListChecks,
+  Snowflake,
+  Star,
+  TrendingUp,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -7,6 +14,8 @@ interface StatsData {
   todayCompletion: number;
   bestStreak: number;
   weeklyAverage: number;
+  streakTokens?: number;
+  points?: number;
 }
 
 interface StatCardProps {
@@ -30,7 +39,6 @@ function useCountUp(target: number, duration = 1200) {
       if (startRef.current === null) startRef.current = timestamp;
       const elapsed = timestamp - startRef.current;
       const progress = Math.min(elapsed / duration, 1);
-      // Ease out cubic
       const eased = 1 - (1 - progress) ** 3;
       setCount(Math.round(target * eased));
       if (progress < 1) {
@@ -102,7 +110,7 @@ interface StatsCardsProps {
 }
 
 export function StatsCards({ stats }: StatsCardsProps) {
-  const cards = [
+  const baseCards = [
     {
       title: "Total Habits",
       value: stats.totalHabits,
@@ -140,9 +148,40 @@ export function StatsCards({ stats }: StatsCardsProps) {
     },
   ];
 
+  const extraCards = [
+    ...(stats.points !== undefined
+      ? [
+          {
+            title: "Total Points",
+            value: stats.points,
+            icon: <Star size={18} />,
+            gradient:
+              "linear-gradient(135deg, oklch(0.78 0.18 75), oklch(0.72 0.2 55))",
+            description: "Earn 10 per habit",
+          },
+        ]
+      : []),
+    ...(stats.streakTokens !== undefined
+      ? [
+          {
+            title: "Streak Tokens",
+            value: stats.streakTokens,
+            icon: <Snowflake size={18} />,
+            gradient:
+              "linear-gradient(135deg, oklch(0.72 0.14 210), oklch(0.65 0.16 195))",
+            description: "Freeze a missed day",
+          },
+        ]
+      : []),
+  ];
+
+  const allCards = [...baseCards, ...extraCards];
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {cards.map((card, i) => (
+    <div
+      className={`grid gap-4 ${allCards.length <= 4 ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-2 lg:grid-cols-3"}`}
+    >
+      {allCards.map((card, i) => (
         <StatCard key={card.title} {...card} delay={i} />
       ))}
     </div>
